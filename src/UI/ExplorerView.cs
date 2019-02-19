@@ -163,7 +163,7 @@ namespace ModIO.UI
             GridLayoutGroup layouter = currentPageContainer.gameObject.AddComponent<GridLayoutGroup>();
             ApplyGridLayoutValues(layouter);
 
-            GameObject containerGO = (GameObject)GameObject.Instantiate(currentPageContainer, contentPane);
+            GameObject containerGO = (GameObject)UnityEngine.Object.Instantiate(currentPageContainer.gameObject, contentPane);
             targetPageContainer = (RectTransform)containerGO.transform;
             targetPageContainer.gameObject.SetActive(false);
 
