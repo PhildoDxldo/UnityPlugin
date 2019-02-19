@@ -20,7 +20,7 @@ namespace ModIO
     public class DownloadHandlerFile : DownloadHandlerScript
     {
         // ---------[ CONSTANTS ]---------
-        // TODO(@jackson): TEST THIS!! (Does this limit the amount of bytes received?)
+        // TODO(@jackson): TEST THIS!! (Does this limit the amount of bytes received per frame?)
         private const int BUFFER_SIZE = 1024^2;
 
         // ---------[ FIELDS ]---------
@@ -29,7 +29,7 @@ namespace ModIO
         private FileStream m_fileStream = null;
         private bool m_completed = false;
         private string m_filePath = string.Empty;
-        private int m_bytesDownloaded = 0;
+        private int m_received = 0;
         private int m_contentLength = -1;
 
         // ---------[ INITIALIZATION ]---------
@@ -64,7 +64,7 @@ namespace ModIO
         {
             if(m_fileStream != null)
             {
-                m_fileStream.Close();
+                m_fileStream.Dispose();
                 m_fileStream = null;
             }
 
@@ -80,7 +80,7 @@ namespace ModIO
                 return 0f;
             }
 
-            return (float)m_bytesDownloaded / (float)m_contentLength;
+            return Mathf.Clamp01((float)m_received / (float)m_contentLength);
         }
 
         protected override string GetText() { return null; }
@@ -105,6 +105,7 @@ namespace ModIO
                 try
                 {
                     m_fileStream.Write(bytesReceived, 0, dataLength);
+                    m_received += dataLength;
                 }
                 catch (Exception e)
                 {
@@ -115,7 +116,7 @@ namespace ModIO
 
                     try
                     {
-                        m_fileStream.Close();
+                        m_fileStream.Dispose();
                     }
                     finally
                     {
@@ -127,7 +128,6 @@ namespace ModIO
 
                     Debug.LogWarning(warningInfo
                                      + Utility.GenerateExceptionDebugString(e));
-
                 }
             }
 
