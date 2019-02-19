@@ -33,7 +33,6 @@ namespace ModIO.UI
                     canvas = this.gameObject.AddComponent<Canvas>();
                     canvas.overridePixelPerfect = false;
                     canvas.overrideSorting = true;
-                    canvas.additionalShaderChannels = AdditionalCanvasShaderChannels.None;
                 }
 
                 canvas.sortingOrder = 30000;
@@ -119,7 +118,6 @@ namespace ModIO.UI
             cocCanvas.overridePixelPerfect = false;
             cocCanvas.overrideSorting = true;
             cocCanvas.sortingOrder = 29999;
-            cocCanvas.additionalShaderChannels = AdditionalCanvasShaderChannels.None;
 
             // add raycaster
             GraphicRaycaster cocGR = cocGO.AddComponent<GraphicRaycaster>();
@@ -129,7 +127,7 @@ namespace ModIO.UI
 
             // add canvas renderer
             CanvasRenderer cocCR = cocGO.AddComponent<CanvasRenderer>();
-            cocCR.cullTransparentMesh = false;
+            // cocCR.cullTransparentMesh = false;
 
             // add touchable
             cocGO.AddComponent<Touchable>();
