@@ -86,10 +86,10 @@ namespace ModIO.UI
             for(int i = 0; i < excessProfileCount; ++i)
             {
                 // create GameObject
-                GameObject viewGO = GameObject.Instantiate(itemPrefab,
-                                                           new Vector3(),
-                                                           Quaternion.identity,
-                                                           scrollView.content);
+                GameObject viewGO = (GameObject)GameObject.Instantiate(itemPrefab,
+                                                                       new Vector3(),
+                                                                       Quaternion.identity,
+                                                                       scrollView.content);
                 ModView view = viewGO.GetComponent<ModView>();
                 view.onClick +=                 NotifyInspectRequested;
                 view.subscribeRequested +=      NotifySubscribeRequested;
