@@ -62,8 +62,11 @@ namespace ModIO.UI
                 builder.Length -= tagSeparator.Length;
             }
 
-            text.text = builder.ToString();
-            text.enabled = true;
+            if(text != null)
+            {
+                text.text = builder.ToString();
+                text.enabled = true;
+            }
 
             if(loadingOverlay != null)
             {
