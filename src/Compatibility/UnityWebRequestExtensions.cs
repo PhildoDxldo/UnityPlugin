@@ -14,7 +14,10 @@ namespace ModIO
         // NOTE(@jackson): Presumably !2018_OR_NEWER
         public static UnityWebRequestAsyncOperation SendWebRequest(this UnityWebRequest request)
         {
-            return new UnityWebRequestAsyncOperation();
+            UnityEngine.AsyncOperation operation = request.Send();
+
+            UnityWebRequestAsyncOperation operationWrapper = new UnityWebRequestAsyncOperation(request, operation);
+            return operationWrapper;
         }
     }
 }

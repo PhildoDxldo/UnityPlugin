@@ -27,7 +27,6 @@ namespace ModIO
         public bool removeFileOnAbort = false;
 
         private FileStream m_fileStream = null;
-        private bool m_completed = false;
         private string m_filePath = string.Empty;
         private int m_received = 0;
         private int m_contentLength = -1;
