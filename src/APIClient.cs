@@ -4,10 +4,9 @@ using System.Collections.Generic;
 
 using Newtonsoft.Json;
 
+using UnityEngine.Networking;
 using Debug = UnityEngine.Debug;
 using WWWForm = UnityEngine.WWWForm;
-using UnityWebRequest = UnityEngine.Networking.UnityWebRequest;
-using UnityWebRequestAsyncOperation = UnityEngine.Networking.UnityWebRequestAsyncOperation;
 
 using ModIO.API;
 
@@ -415,7 +414,7 @@ namespace ModIO
                                         + "\nResponse: " + webRequest.downloadHandler.text
                                         + "\n");
 
-                    if(webRequest.isNetworkError || webRequest.isHttpError)
+                    if(webRequest.IsError())
                     {
                         Debug.LogWarning(logString);
                     }
@@ -426,7 +425,7 @@ namespace ModIO
                 }
                 #endif
 
-                if(webRequest.isNetworkError || webRequest.isHttpError)
+                if(webRequest.IsError())
                 {
                     if(errorCallback != null)
                     {

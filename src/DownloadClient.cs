@@ -146,7 +146,7 @@ namespace ModIO
             UnityWebRequest webRequest = operation.webRequest;
             request.isDone = true;
 
-            if(webRequest.isNetworkError || webRequest.isHttpError)
+            if(webRequest.IsError())
             {
                 request.error = WebRequestError.GenerateFromWebRequest(webRequest);
                 request.NotifyFailed();
@@ -317,7 +317,7 @@ namespace ModIO
             bool succeeded = false;
             downloadInfo.isDone = true;
 
-            if(request.isNetworkError || request.isHttpError)
+            if(request.IsError())
             {
                 downloadInfo.error = WebRequestError.GenerateFromWebRequest(request);
 
