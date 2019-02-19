@@ -24,13 +24,19 @@ namespace ModIO.UI
                 }
             }
 
-            graphic.color = scheme.baseColor;
+            if(graphic != null)
+            {
+                graphic.color = scheme.baseColor;
+            }
         }
 
         #if UNITY_EDITOR
         public void UpdateColorScheme_withUndo()
         {
-            UnityEditor.Undo.RecordObject(graphic, "Applied Color Scheme");
+            if(graphic != null)
+            {
+                UnityEditor.Undo.RecordObject(graphic, "Applied Color Scheme");
+            }
 
             foreach(Graphic g in innerElements)
             {
