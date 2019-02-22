@@ -98,9 +98,10 @@ namespace ModIO.UI
                 return null;
             }
 
-            if(canvas != null)
+            while(canvas != null
+                  && !canvas.isRootCanvas)
             {
-                canvas = canvas.rootCanvas;
+                canvas = canvas.gameObject.GetComponentInParent<Canvas>();
             }
 
             GameObject cocGO = new GameObject("Blocker", typeof(RectTransform));
