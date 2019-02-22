@@ -44,8 +44,7 @@ namespace ModIO.UI.Editor
             bool isProductionAPIURL =   (apiURLProperty.stringValue == APIClient.API_URL_PRODUCTIONSERVER + APIClient.API_VERSION);
             bool isTestAPIURL =         (apiURLProperty.stringValue == APIClient.API_URL_TESTSERVER + APIClient.API_VERSION);
 
-            using(new EditorGUI.DisabledScope(!isProductionAPIURL && !isTestAPIURL))
-            {
+            EditorGUI.BeginDisabledGroup(!isProductionAPIURL && !isTestAPIURL);
                 string buttonText = "Locate ID and API Key";
                 string httpPrefix = @"https://";
 
@@ -63,7 +62,7 @@ namespace ModIO.UI.Editor
                 {
                     Application.OpenURL(httpPrefix + @"mod.io/apikey");
                 }
-            }
+            EditorGUI.EndDisabledGroup();
         }
     }
 }
