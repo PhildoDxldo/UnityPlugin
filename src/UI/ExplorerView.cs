@@ -162,7 +162,9 @@ namespace ModIO.UI
             GridLayoutGroup layouter = currentPageContainer.gameObject.AddComponent<GridLayoutGroup>();
             ApplyGridLayoutValues(layouter);
 
-            GameObject containerGO = (GameObject)UnityEngine.Object.Instantiate(currentPageContainer.gameObject, contentPane);
+            GameObject containerGO = UnityEngine.Object.Instantiate<GameObject>(currentPageContainer.gameObject);
+            containerGO.transform.SetParent(contentPane);
+
             targetPageContainer = (RectTransform)containerGO.transform;
             targetPageContainer.gameObject.SetActive(false);
 
@@ -397,10 +399,8 @@ namespace ModIO.UI
                     resizeWrapper.transform.SetParent(pageTransform);
                     resizeWrapper.transform.localScale = Vector3.one;
 
-                    GameObject itemGO = (GameObject)GameObject.Instantiate(itemPrefab,
-                                                                           new Vector3(),
-                                                                           Quaternion.identity,
-                                                                           resizeWrapper.transform);
+                    GameObject itemGO = (GameObject)GameObject.Instantiate(itemPrefab);
+                    itemGO.transform.SetParent(resizeWrapper.transform);
 
                     RectTransform itemTransform = itemGO.transform as RectTransform;
                     itemTransform.pivot = centerVector;

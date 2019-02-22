@@ -70,10 +70,8 @@ namespace ModIO.UI
             // create
             foreach(ModTagDisplayData tagData in displayData)
             {
-                GameObject displayGO = (GameObject)GameObject.Instantiate(tagDisplayPrefab,
-                                                                          new Vector3(),
-                                                                          Quaternion.identity,
-                                                                          container);
+                GameObject displayGO = UnityEngine.Object.Instantiate<GameObject>(tagDisplayPrefab);
+                displayGO.transform.SetParent(container);
 
                 ModTagDisplayComponent display = displayGO.GetComponent<ModTagDisplayComponent>();
                 display.Initialize();
@@ -126,10 +124,8 @@ namespace ModIO.UI
 
                 UnityEditor.EditorApplication.delayCall += () =>
                 {
-                    GameObject displayGO = (GameObject)GameObject.Instantiate(tagDisplayPrefab,
-                                                                              new Vector3(),
-                                                                              Quaternion.identity,
-                                                                              container);
+                    GameObject displayGO = UnityEngine.Object.Instantiate<GameObject>(tagDisplayPrefab);
+                    displayGO.transform.SetParent(container);
                     displayGO.hideFlags = HideFlags.HideAndDontSave | HideFlags.HideInInspector;
 
                     ModTagDisplayComponent display = displayGO.GetComponent<ModTagDisplayComponent>();

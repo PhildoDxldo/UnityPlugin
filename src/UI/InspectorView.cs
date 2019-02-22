@@ -198,7 +198,8 @@ namespace ModIO.UI
 
             foreach(Modfile modfile in modfiles)
             {
-                GameObject go = GameObject.Instantiate(versionHistoryItemPrefab, versionHistoryContainer) as GameObject;
+                GameObject go = UnityEngine.Object.Instantiate<GameObject>(versionHistoryItemPrefab);
+                go.transform.SetParent(versionHistoryContainer);
                 go.name = "Mod Version: " + modfile.version;
 
                 if(String.IsNullOrEmpty(modfile.changelog))

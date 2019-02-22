@@ -382,7 +382,9 @@ namespace ModIO.UI
         {
             Debug.Assert(imagePrefab != null);
 
-            GameObject media_go = (GameObject)GameObject.Instantiate(imagePrefab, container);
+            GameObject media_go = UnityEngine.Object.Instantiate<GameObject>(imagePrefab);
+            media_go.transform.SetParent(container);
+
             ImageDisplay mediaDisplay = media_go.GetComponent<ImageDisplay>();
             mediaDisplay.Initialize();
 

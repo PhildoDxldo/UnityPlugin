@@ -123,10 +123,8 @@ namespace ModIO.UI
                                                                 GameObject prefab,
                                                                 RectTransform container)
         {
-            GameObject displayGO = (GameObject)GameObject.Instantiate(prefab,
-                                                                      new Vector3(),
-                                                                      Quaternion.identity,
-                                                                      container);
+            GameObject displayGO = UnityEngine.Object.Instantiate<GameObject>(prefab);
+            displayGO.transform.SetParent(container);
             displayGO.name = category.name;
 
             ModTagCategoryDisplay display = displayGO.GetComponent<ModTagCategoryDisplay>();
