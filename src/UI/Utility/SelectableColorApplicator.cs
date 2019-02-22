@@ -3,6 +3,12 @@ using UnityEngine.UI;
 
 namespace ModIO.UI
 {
+    #if UNITY_2018_3_OR_NEWER
+    [ExecuteAlways]
+    #else
+    [ExecuteInEditMode]
+    #endif
+
     [RequireComponent(typeof(Selectable))]
     public class SelectableColorApplicator : MonoBehaviour
     {
@@ -12,9 +18,17 @@ namespace ModIO.UI
         private Selectable selectable
         { get { return this.gameObject.GetComponent<Selectable>(); } }
 
+        private void Start()
+        {
+            UpdateColorScheme();
+        }
+
         public void UpdateColorScheme()
         {
-            if(scheme == null || selectable == null) { return; }
+            if(selectable == null || scheme == null)
+            {
+                return;
+            }
 
             if(selectable.targetGraphic != null)
             {
@@ -29,13 +43,24 @@ namespace ModIO.UI
                 }
             }
 
+            Toggle toggle = selectable as Toggle;
+            if(toggle != null
+               && toggle.graphic != null)
+            {
+                toggle.graphic.color = scheme.toggleColor;
+            }
+
+
             selectable.colors = scheme.functionalColors;
         }
 
         #if UNITY_EDITOR
         public void UpdateColorScheme_withUndo()
         {
-            if(scheme == null || selectable == null) { return; }
+            if(selectable == null || scheme == null)
+            {
+                return;
+            }
 
             UnityEditor.Undo.RecordObject(selectable, "Applied Color Scheme");
 
@@ -50,6 +75,13 @@ namespace ModIO.UI
                 {
                     UnityEditor.Undo.RecordObject(g, "Applied Color Scheme");
                 }
+            }
+
+            Toggle toggle = selectable as Toggle;
+            if(toggle != null
+               && toggle.graphic != null)
+            {
+                UnityEditor.Undo.RecordObject(toggle, "Applied Color Scheme");
             }
 
             UpdateColorScheme();

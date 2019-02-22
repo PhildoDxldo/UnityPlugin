@@ -3,6 +3,12 @@ using UnityEngine.UI;
 
 namespace ModIO.UI
 {
+    #if UNITY_2018_3_OR_NEWER
+    [ExecuteAlways]
+    #else
+    [ExecuteInEditMode]
+    #endif
+
     [RequireComponent(typeof(Graphic))]
     public class GraphicColorApplicator : MonoBehaviour
     {
@@ -12,9 +18,19 @@ namespace ModIO.UI
         private Graphic graphic
         { get { return this.gameObject.GetComponent<Graphic>(); } }
 
+        private void Start()
+        {
+            UpdateColorScheme();
+        }
+
         public void UpdateColorScheme()
         {
-            if(scheme == null) { return; }
+            if(graphic == null || scheme == null)
+            {
+                return;
+            }
+
+            graphic.color = scheme.baseColor;
 
             foreach(Graphic g in innerElements)
             {
@@ -23,20 +39,17 @@ namespace ModIO.UI
                     g.color = scheme.innerElementColor;
                 }
             }
-
-            if(graphic != null)
-            {
-                graphic.color = scheme.baseColor;
-            }
         }
 
         #if UNITY_EDITOR
         public void UpdateColorScheme_withUndo()
         {
-            if(graphic != null)
+            if(graphic == null || scheme == null)
             {
-                UnityEditor.Undo.RecordObject(graphic, "Applied Color Scheme");
+                return;
             }
+
+            UnityEditor.Undo.RecordObject(graphic, "Applied Color Scheme");
 
             foreach(Graphic g in innerElements)
             {

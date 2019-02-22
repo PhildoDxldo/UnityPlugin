@@ -32,42 +32,6 @@ namespace ModIO.UI
         }
 
         [Serializable]
-        private class ExplorerSortOption
-        {
-            public string displayText;
-            public string apiFieldName;
-            public bool isSortAscending;
-
-            public static ExplorerSortOption Create(string displayText, string apiFieldName, bool isSortAscending)
-            {
-                ExplorerSortOption newSOD = new ExplorerSortOption()
-                {
-                    displayText = displayText,
-                    apiFieldName = apiFieldName,
-                    isSortAscending = isSortAscending,
-                };
-                return newSOD;
-            }
-        }
-
-        [Serializable]
-        private class SubscriptionSortOption
-        {
-            public string displayText;
-            public Comparison<ModProfile> sortDelegate;
-
-            public static SubscriptionSortOption Create(string displayText, Comparison<ModProfile> sortDelegate)
-            {
-                SubscriptionSortOption newSOD = new SubscriptionSortOption()
-                {
-                    displayText = displayText,
-                    sortDelegate = sortDelegate,
-                };
-                return newSOD;
-            }
-        }
-
-        [Serializable]
         private struct SubscriptionViewFilter
         {
             public Func<ModProfile, bool> titleFilterDelegate;
@@ -81,32 +45,110 @@ namespace ModIO.UI
         /// <summary>Number of seconds between update polls.</summary>
         private const float AUTOMATIC_UPDATE_INTERVAL = 15f;
 
-        private readonly ExplorerSortOption[] explorerSortOptions = new ExplorerSortOption[]
+        private delegate void SetFilterValuesDelegate(ref RequestFilter filter);
+        private readonly Dictionary<string, SetFilterValuesDelegate> m_explorerSortOptions = new Dictionary<string, SetFilterValuesDelegate>()
         {
-            ExplorerSortOption.Create("NEWEST",         ModIO.API.GetAllModsFilterFields.dateLive, false),
-            ExplorerSortOption.Create("POPULARITY",     ModIO.API.GetAllModsFilterFields.popular, true),
-            ExplorerSortOption.Create("RATING",         ModIO.API.GetAllModsFilterFields.rating, false),
-            ExplorerSortOption.Create("SUBSCRIBERS",    ModIO.API.GetAllModsFilterFields.subscribers, false),
-        };
-        private readonly SubscriptionSortOption[] subscriptionSortOptions = new SubscriptionSortOption[]
-        {
-            SubscriptionSortOption.Create("A-Z",       (a,b) => { return String.Compare(a.name, b.name); }),
-            SubscriptionSortOption.Create("LARGEST",   (a,b) => { return (int)(a.currentBuild.fileSize - a.currentBuild.fileSize); }),
-            SubscriptionSortOption.Create("UPDATED",   (a,b) => { return b.dateUpdated - a.dateUpdated; }),
-            SubscriptionSortOption.Create("ENABLED",
-            (a,b) =>
             {
-                int diff = 0;
-                diff += (ModManager.GetEnabledModIds().Contains(a.id) ? -1 : 0);
-                diff += (ModManager.GetEnabledModIds().Contains(b.id) ? 1 : 0);
-
-                if(diff == 0)
+                "NEWEST", (ref RequestFilter f) =>
                 {
-                    diff = String.Compare(a.name, b.name);
+                    f.sortFieldName = ModIO.API.GetAllModsFilterFields.dateLive;
+                    f.isSortAscending = false;
                 }
+            },
+            {
+                "POPULARITY", (ref RequestFilter f) =>
+                {
+                    f.sortFieldName = ModIO.API.GetAllModsFilterFields.popular;
 
-                return diff;
-            }),
+                    // NOTE(@jackson): This sort direction is backwards in API V1
+                    Debug.Assert(APIClient.API_VERSION == "v1");
+                    f.isSortAscending = true;
+                }
+            },
+            {
+                "RATING", (ref RequestFilter f) =>
+                {
+                    f.sortFieldName = ModIO.API.GetAllModsFilterFields.rating;
+
+                    // NOTE(@jackson): This sort direction is backwards in API V1
+                    Debug.Assert(APIClient.API_VERSION == "v1");
+                    f.isSortAscending = true;
+                }
+            },
+            {
+                "SUBSCRIBERS", (ref RequestFilter f) =>
+                {
+                    f.sortFieldName = ModIO.API.GetAllModsFilterFields.subscribers;
+
+                    // NOTE(@jackson): This sort direction is backwards in API V1
+                    Debug.Assert(APIClient.API_VERSION == "v1");
+                    f.isSortAscending = true;
+                }
+            },
+        };
+
+        private readonly Dictionary<string, Comparison<ModProfile>> m_subscriptionSortOptions = new Dictionary<string, Comparison<ModProfile>>()
+        {
+            {
+                "A-Z", (a,b) =>
+                {
+                    int compareResult = String.Compare(a.name, b.name);
+                    if(compareResult == 0)
+                    {
+                        compareResult = a.id - b.id;
+                    }
+                    return compareResult;
+                }
+            },
+            {
+                "LARGEST", (a,b) =>
+                {
+                    int compareResult = (int)(b.currentBuild.fileSize - a.currentBuild.fileSize);
+                    if(compareResult == 0)
+                    {
+                        compareResult = String.Compare(a.name, b.name);
+                        if(compareResult == 0)
+                        {
+                            compareResult = a.id - b.id;
+                        }
+                    }
+                    return compareResult;
+                }
+            },
+            {
+                "UPDATED", (a,b) =>
+                {
+                    int compareResult = b.dateUpdated - a.dateUpdated;
+                    if(compareResult == 0)
+                    {
+                        compareResult = String.Compare(a.name, b.name);
+                        if(compareResult == 0)
+                        {
+                            compareResult = a.id - b.id;
+                        }
+                    }
+                    return compareResult;
+                }
+            },
+            {
+                "ENABLED", (a,b) =>
+                {
+                    int compareResult = 0;
+                    compareResult += (ModManager.GetEnabledModIds().Contains(a.id) ? -1 : 0);
+                    compareResult += (ModManager.GetEnabledModIds().Contains(b.id) ? 1 : 0);
+
+                    if(compareResult == 0)
+                    {
+                        compareResult = String.Compare(a.name, b.name);
+                        if(compareResult == 0)
+                        {
+                            compareResult = a.id - b.id;
+                        }
+                    }
+
+                    return compareResult;
+                }
+            },
         };
 
         // ---------[ FIELDS ]---------
@@ -124,12 +166,12 @@ namespace ModIO.UI
         {
             profile = new UserProfileDisplayData()
             {
-                userId = -1,
+                userId = UserProfile.NULL_ID,
                 username = "Guest",
             },
             avatar = new ImageDisplayData()
             {
-                userId = -1,
+                userId = UserProfile.NULL_ID,
                 imageId = "guest_avatar",
                 mediaType = ImageDisplayData.MediaType.UserAvatar,
                 originalTexture = null,
@@ -151,6 +193,7 @@ namespace ModIO.UI
         // --- RUNTIME DATA ---
         private GameProfile m_gameProfile = null;
         private UserProfile m_userProfile = null;
+        private List<SimpleRating> m_userRatings = new List<SimpleRating>();
         private int lastSubscriptionSync = -1;
         private int lastCacheUpdate = -1;
         private RequestFilter explorerViewFilter = new RequestFilter();
@@ -189,7 +232,7 @@ namespace ModIO.UI
             #if DEBUG
             PluginSettings.Data settings = PluginSettings.data;
 
-            if(settings.gameId <= 0)
+            if(settings.gameId == GameProfile.NULL_ID)
             {
                 Debug.LogError("[mod.io] Game ID is missing from the Plugin Settings.\n"
                                + "This must be configured by selecting the mod.io > Edit Settings menu"
@@ -319,31 +362,36 @@ namespace ModIO.UI
             subscriptionsView.enableModRequested += (v) => EnableMod(v.data.profile.modId);
             subscriptionsView.disableModRequested += (v) => DisableMod(v.data.profile.modId);
 
-            // - setup ui filter controls -
+            // - setup filter controls -
+            subscriptionViewFilter.titleFilterDelegate = (p) => true;
             if(subscriptionsView.nameSearchField != null)
             {
-                subscriptionsView.nameSearchField.onValueChanged.AddListener((t) =>
+                subscriptionsView.nameSearchField.onValueChanged.AddListener((t) => UpdateSubscriptionFilters());
+
+                // set initial value
+                string filterString = subscriptionsView.nameSearchField.text.ToUpper();
+                if(!String.IsNullOrEmpty(filterString))
                 {
-                    UpdateSubscriptionFilters();
-                });
+                    subscriptionViewFilter.titleFilterDelegate = (p) =>
+                    {
+                        return p.name.ToUpper().Contains(filterString);
+                    };
+                }
             }
 
+            subscriptionViewFilter.sortDelegate = m_subscriptionSortOptions.First().Value;
             if(subscriptionsView.sortByDropdown != null)
             {
-                subscriptionsView.sortByDropdown.options = new List<Dropdown.OptionData>(subscriptionSortOptions.Count());
-                foreach(SubscriptionSortOption option in subscriptionSortOptions)
-                {
-                    subscriptionsView.sortByDropdown.options.Add(new Dropdown.OptionData() { text = option.displayText });
-                }
-                subscriptionsView.sortByDropdown.value = 0;
-                subscriptionsView.sortByDropdown.captionText.text = subscriptionSortOptions[0].displayText;
-
                 subscriptionsView.sortByDropdown.onValueChanged.AddListener((v) => UpdateSubscriptionFilters());
-            }
 
-            // - initialize filter -
-            subscriptionViewFilter.sortDelegate = subscriptionSortOptions[0].sortDelegate;
-            subscriptionViewFilter.titleFilterDelegate = (p) => true;
+                // set initial value
+                string sortSelected = subscriptionsView.sortByDropdown.options[subscriptionsView.sortByDropdown.value].text.ToUpper();
+                Comparison<ModProfile> sortFunc = null;
+                if(m_subscriptionSortOptions.TryGetValue(sortSelected, out sortFunc))
+                {
+                    subscriptionViewFilter.sortDelegate = sortFunc;
+                }
+            }
 
             // get page
             subscriptionsView.DisplayProfiles(null);
@@ -375,19 +423,11 @@ namespace ModIO.UI
                 explorerView.nameSearchField.onEndEdit.AddListener((t) =>
                 {
                     UpdateExplorerFilters();
-                } );
+                });
             }
 
             if(explorerView.sortByDropdown != null)
             {
-                explorerView.sortByDropdown.options = new List<Dropdown.OptionData>(explorerSortOptions.Count());
-                foreach(ExplorerSortOption option in explorerSortOptions)
-                {
-                    explorerView.sortByDropdown.options.Add(new Dropdown.OptionData() { text = option.displayText });
-                }
-                explorerView.sortByDropdown.value = 0;
-                explorerView.sortByDropdown.captionText.text = explorerSortOptions[0].displayText;
-
                 explorerView.sortByDropdown.onValueChanged.AddListener((v) => UpdateExplorerFilters());
             }
 
@@ -396,9 +436,8 @@ namespace ModIO.UI
 
             explorerViewFilter = new RequestFilter();
 
-            ExplorerSortOption sortOption = explorerSortOptions[0];
-            explorerViewFilter.sortFieldName = sortOption.apiFieldName;
-            explorerViewFilter.isSortAscending = sortOption.isSortAscending;
+            SetFilterValuesDelegate sortValues = m_explorerSortOptions.First().Value;
+            sortValues(ref explorerViewFilter);
 
             int pageSize = explorerView.itemsPerPage;
             RequestPage<ModProfile> modPage = new RequestPage<ModProfile>()
@@ -635,6 +674,8 @@ namespace ModIO.UI
             }
 
             this.m_validOAuthToken = succeeded;
+
+            StartCoroutine(FetchUserRatings());
         }
 
         private System.Collections.IEnumerator SynchronizeSubscriptionsWithServer()
@@ -883,6 +924,66 @@ namespace ModIO.UI
             }
         }
 
+        private System.Collections.IEnumerator FetchUserRatings()
+        {
+            APIPaginationParameters pagination = new APIPaginationParameters();
+            RequestFilter filter = new RequestFilter();
+            filter.fieldFilters[API.GetUserRatingsFilterFields.gameId]
+                = new EqualToFilter<int>() { filterValue = m_gameProfile.id };
+
+            bool isRequestDone = false;
+            List<ModRating> retrievedRatings = new List<ModRating>();
+
+            while(!isRequestDone)
+            {
+                RequestPage<ModRating> response = null;
+                WebRequestError error = null;
+
+                APIClient.GetUserRatings(filter, pagination,
+                                         (r) =>
+                                         {
+                                            response = r;
+                                            isRequestDone = true;
+                                         },
+                                         (e) =>
+                                         {
+                                            error = e;
+                                            isRequestDone = true;
+                                         });
+
+                while(!isRequestDone) { yield return null; }
+
+                if(error != null)
+                {
+                    // handle error
+                    int secondsUntilRetry;
+                    string displayMessage;
+                    bool cancelRequest;
+
+                    ProcessRequestError(error, out cancelRequest,
+                                        out secondsUntilRetry, out displayMessage);
+
+                    break;
+                }
+                else
+                {
+                    retrievedRatings.AddRange(response.items);
+
+                    isRequestDone = (response.size + response.resultOffset >= response.resultTotal);
+                }
+            }
+
+            m_userRatings = new List<SimpleRating>(retrievedRatings.Count);
+            foreach(ModRating rating in retrievedRatings)
+            {
+                m_userRatings.Add(new SimpleRating()
+                {
+                    modId = rating.modId,
+                    isPositive = (rating.ratingValue == ModRating.POSITIVE_VALUE),
+                });
+            }
+        }
+
         private void VerifySubscriptionInstallations()
         {
             var subscribedModIds = ModManager.GetSubscribedModIds();
@@ -1089,6 +1190,8 @@ namespace ModIO.UI
                         }
                     }
 
+                    filteredList.Sort(this.subscriptionViewFilter.sortDelegate);
+
                     onSuccess(filteredList);
                 };
 
@@ -1171,6 +1274,8 @@ namespace ModIO.UI
                         WriteManifest();
 
                         PushSubscriptionChanges();
+
+                        StartCoroutine(FetchUserRatings());
                     }
                 }
 
@@ -2002,17 +2107,17 @@ namespace ModIO.UI
         public void UpdateExplorerFilters()
         {
             // sort
-            if(explorerView.sortByDropdown == null)
+            SetFilterValuesDelegate setSort = null;
+            if(explorerView.sortByDropdown != null)
             {
-                explorerViewFilter.sortFieldName = ModIO.API.GetAllModsFilterFields.popular;
-                explorerViewFilter.isSortAscending = false;
+                string key = explorerView.sortByDropdown.options[explorerView.sortByDropdown.value].text.ToUpper();
+                m_explorerSortOptions.TryGetValue(key, out setSort);
             }
-            else
+            if(setSort == null)
             {
-                ExplorerSortOption optionData = explorerSortOptions[explorerView.sortByDropdown.value];
-                explorerViewFilter.sortFieldName = optionData.apiFieldName;
-                explorerViewFilter.isSortAscending = optionData.isSortAscending;
+                setSort = m_explorerSortOptions.First().Value;
             }
+            setSort(ref explorerViewFilter);
 
             // title
             if(explorerView.nameSearchField == null
@@ -2068,28 +2173,34 @@ namespace ModIO.UI
 
         public void UpdateSubscriptionFilters()
         {
-            // sort
-            if(subscriptionsView.sortByDropdown == null)
+            // filter
+            subscriptionViewFilter.titleFilterDelegate = (p) => true;
+            if(subscriptionsView.nameSearchField != null
+               && !String.IsNullOrEmpty(subscriptionsView.nameSearchField.text))
             {
-                subscriptionViewFilter.sortDelegate = subscriptionSortOptions[0].sortDelegate;
-            }
-            else
-            {
-                subscriptionViewFilter.sortDelegate = subscriptionSortOptions[subscriptionsView.sortByDropdown.value].sortDelegate;
-            }
-
-            // name
-            if(subscriptionsView.nameSearchField == null
-               || String.IsNullOrEmpty(subscriptionsView.nameSearchField.text))
-            {
-                subscriptionViewFilter.titleFilterDelegate = (p) => true;
-            }
-            else
-            {
+                // set initial value
+                string filterString = subscriptionsView.nameSearchField.text.ToUpper();
                 subscriptionViewFilter.titleFilterDelegate = (p) =>
                 {
-                    return p.name.ToUpper().Contains(subscriptionsView.nameSearchField.text.ToUpper());
+                    return p.name.ToUpper().Contains(filterString);
                 };
+            }
+
+            // sort
+            subscriptionViewFilter.sortDelegate = m_subscriptionSortOptions.First().Value;
+            if(subscriptionsView.sortByDropdown != null)
+            {
+                // set initial value
+                string sortSelected = subscriptionsView.sortByDropdown.options[subscriptionsView.sortByDropdown.value].text.ToUpper();
+                Comparison<ModProfile> sortFunc = null;
+                if(m_subscriptionSortOptions.TryGetValue(sortSelected, out sortFunc))
+                {
+                    subscriptionViewFilter.sortDelegate = sortFunc;
+                }
+                else
+                {
+                    Debug.LogWarning("[mod.io] No sort method found matching the selected dropdown option of \'" + sortSelected + "\'");
+                }
             }
 
             // request page
