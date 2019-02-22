@@ -1,5 +1,8 @@
-﻿using UnityEngine.Networking;
-
+﻿#if UNITY_5_4_OR_NEWER
+using UnityWebRequest = UnityEngine.Networking.UnityWebRequest;
+#else
+using UnityWebRequest = UnityEngine.Experimental.Networking.UnityWebRequest;
+#endif
 // TODO(@jackson): Test versions
 namespace ModIO
 {

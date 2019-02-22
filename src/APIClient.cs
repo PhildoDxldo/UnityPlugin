@@ -4,9 +4,14 @@ using System.Collections.Generic;
 
 using Newtonsoft.Json;
 
-using UnityEngine.Networking;
 using Debug = UnityEngine.Debug;
 using WWWForm = UnityEngine.WWWForm;
+
+#if UNITY_5_4_OR_NEWER
+using UnityWebRequest = UnityEngine.Networking.UnityWebRequest;
+#else
+using UnityWebRequest = UnityEngine.Experimental.Networking.UnityWebRequest;
+#endif
 
 using ModIO.API;
 

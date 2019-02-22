@@ -3,6 +3,12 @@ using Newtonsoft.Json;
 
 using Debug = UnityEngine.Debug;
 
+#if UNITY_5_4_OR_NEWER
+using UnityWebRequest = UnityEngine.Networking.UnityWebRequest;
+#else
+using UnityWebRequest = UnityEngine.Experimental.Networking.UnityWebRequest;
+#endif
+
 namespace ModIO
 {
     [System.Serializable]
@@ -45,7 +51,7 @@ namespace ModIO
         public string responseBody;
 
         // ---------[ INITIALIZATION ]---------
-        public static WebRequestError GenerateFromWebRequest(UnityEngine.Networking.UnityWebRequest webRequest)
+        public static WebRequestError GenerateFromWebRequest(UnityWebRequest webRequest)
         {
             UnityEngine.Debug.Assert(webRequest != null);
             UnityEngine.Debug.Assert(webRequest.IsError());

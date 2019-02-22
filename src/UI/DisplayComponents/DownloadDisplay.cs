@@ -1,7 +1,12 @@
 using System;
 using UnityEngine;
 using UnityEngine.UI;
+
+#if UNITY_5_4_OR_NEWER
 using UnityWebRequest = UnityEngine.Networking.UnityWebRequest;
+#else
+using UnityWebRequest = UnityEngine.Experimental.Networking.UnityWebRequest;
+#endif
 
 namespace ModIO.UI
 {
