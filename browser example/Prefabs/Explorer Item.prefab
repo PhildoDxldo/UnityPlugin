@@ -281,6 +281,7 @@ GameObject:
   m_Component:
   - 224: {fileID: 224000013758958926}
   - 114: {fileID: 114000010126402090}
+  - 114: {fileID: 114000010705152408}
   m_Layer: 5
   m_Name: Logo Container
   m_TagString: Untagged
@@ -335,7 +336,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 0.19607843, g: 0.19607843, b: 0.19607843, a: 1}
+  m_Color: {r: 0.09019608, g: 0.09019608, b: 0.15294118, a: 1}
   m_RaycastTarget: 0
   m_OnCullStateChanged:
     m_PersistentCalls:
@@ -453,6 +454,17 @@ MonoBehaviour:
   innerElements:
   - {fileID: 114000011288880092}
   scheme: {fileID: 11400000, guid: 4d36422ba44f94cbda72289386280ccc, type: 2}
+--- !u!114 &114000010705152408
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_PrefabParentObject: {fileID: 0}
+  m_PrefabInternal: {fileID: 100100000}
+  m_GameObject: {fileID: 1000013711319620}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: -146154839, guid: f5f67c52d1564df4a8936ccd202a3bd8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!114 &114000010744639986
 MonoBehaviour:
   m_ObjectHideFlags: 1
@@ -646,7 +658,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   scheme: {fileID: 11400000, guid: b2020889943784e38b9f4f1d30e0aea8, type: 2}
-  innerElements: []
+  innerElements:
+  - {fileID: 114000013631678670}
+  - {fileID: 114000010086460280}
 --- !u!114 &114000011090490100
 MonoBehaviour:
   m_ObjectHideFlags: 1
@@ -901,7 +915,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 0.18823531, g: 0.8117648, b: 0.39607847, a: 1}
+  m_Color: {r: 0.13725491, g: 0.81960785, b: 0.3764706, a: 1}
   m_RaycastTarget: 1
   m_OnCullStateChanged:
     m_PersistentCalls:
@@ -1050,7 +1064,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 0.20784314, g: 0.4627451, b: 0.8509804, a: 1}
+  m_Color: {r: 0.19607843, g: 0.4509804, b: 0.8627451, a: 1}
   m_RaycastTarget: 1
   m_OnCullStateChanged:
     m_PersistentCalls:
@@ -1123,7 +1137,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 0.19607843, g: 0.19607843, b: 0.19607843, a: 1}
+  m_Color: {r: 0.09019608, g: 0.09019608, b: 0.15294118, a: 1}
   m_RaycastTarget: 0
   m_OnCullStateChanged:
     m_PersistentCalls:
