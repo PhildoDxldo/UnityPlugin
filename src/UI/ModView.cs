@@ -342,14 +342,14 @@ namespace ModIO.UI
             {
                 downloadDisplay.Initialize();
 
-                // m_getDelegates.Add((ref ModDisplayData d) =>
-                // {
-                //     d.submittedBy = creatorView.data;
-                // });
-                // m_setDelegates.Add((d) =>
-                // {
-                //     creatorView.data = d.submittedBy;
-                // });
+                m_getDelegates.Add((ref ModDisplayDatad d) =>
+                {
+                    d.binaryDownload = downloadDisplay.data;
+                });
+                m_setDelegates.Add((d) =>
+                {
+                    downloadDisplay.data = d.binaryDownload;
+                });
             }
         }
 
