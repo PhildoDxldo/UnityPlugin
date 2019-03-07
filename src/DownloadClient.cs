@@ -273,6 +273,13 @@ namespace ModIO
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(tempFilePath));
                 downloadInfo.request.downloadHandler = new DownloadHandlerFile(tempFilePath);
+
+                #if PLATFORM_PS4
+                // NOTE(@jackson): This workaround addresses an issue in UnityWebRequests on the
+                //  PS4 whereby redirects fail in specific cases. Special thanks to @Eamon of
+                //  Spiderling Studios (http://spiderlinggames.co.uk/)
+                downloadInfo.request.redirectLimit = 0;
+                #endif
             }
             catch(Exception e)
             {
@@ -288,6 +295,8 @@ namespace ModIO
 
                 return;
             }
+
+            var operation = downloadInfo.request.SendWebRequest();
 
             #if DEBUG
             if(DownloadClient.logAllRequests)
@@ -305,13 +314,16 @@ namespace ModIO
                     }
                 }
 
-                Debug.Log("GENERATING DOWNLOAD REQUEST"
+                int timeStamp = ServerTimeStamp.Now;
+                Debug.Log("DOWNLOAD REQUEST SENT"
+                          + "\nTimeStamp: [" + timeStamp.ToString() + "] "
+                          + ServerTimeStamp.ToLocalDateTime(timeStamp).ToString()
                           + "\nURL: " + downloadInfo.request.url
                           + "\nHeaders: " + requestHeaders);
             }
             #endif
 
-            var operation = downloadInfo.request.SendWebRequest();
+
             operation.completed += (o) => DownloadClient.OnModBinaryRequestCompleted(idPair);
         }
 
@@ -324,6 +336,29 @@ namespace ModIO
 
             if(request.IsError())
             {
+                #if PLATFORM_PS4
+                // NOTE(@jackson): This workaround addresses an issue in UnityWebRequests on the
+                //  PS4 whereby redirects fail in specific cases. Special thanks to @Eamon of
+                //  Spiderling Studios (http://spiderlinggames.co.uk/)
+                if (downloadInfo.error.responseCode == 302) // Redirect limit exceeded
+                {
+                    string headerLocation = string.Empty;
+                    if (downloadInfo.error.responseHeaders.TryGetValue("location", out headerLocation)
+                        && !request.url.Equals(headerLocation))
+                    {
+                        if (DownloadClient.logAllRequests)
+                        {
+                            Debug.LogFormat("CAUGHT DOWNLOAD REDIRECTION\nURL: {0}", headerLocation);
+                        }
+
+                        downloadInfo.error = null;
+                        downloadInfo.isDone = false;
+                        DownloadModBinary_Internal(idPair, headerLocation);
+                        return;
+                    }
+                }
+                #endif
+
                 downloadInfo.error = WebRequestError.GenerateFromWebRequest(request);
 
                 if(DownloadClient.logAllRequests)

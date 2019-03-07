@@ -1,6 +1,5 @@
 ﻿using System;
 using System.IO;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -237,7 +236,10 @@ namespace ModIO
             var installedModInfo = ModManager.IterateInstalledMods(modIdFilter);
             foreach(var kvp in installedModInfo)
             {
-                versions.Add(kvp.Key);
+                if(kvp.Key.modId != ModProfile.NULL_ID)
+                {
+                    versions.Add(kvp.Key);
+                }
             }
 
             return versions;
@@ -294,6 +296,234 @@ namespace ModIO
 
                     var info = new KeyValuePair<ModfileIdPair, string>(idPair, modDirectory);
                     yield return info;
+                }
+            }
+        }
+
+        /// <summary>Downloads and installs  all installed mods.</summary>
+        public static System.Collections.IEnumerator UpdateAllInstalledMods_Coroutine()
+        {
+            List<ModfileIdPair> installedModVersions = ModManager.GetInstalledModVersions(false);
+            List<Modfile> updatedModVersions = new List<Modfile>();
+
+            bool isRequestResolved = false;
+            int attemptCount = 0;
+
+            // reattempt delay calculator
+            Func<WebRequestError, int> calcReattemptDelay = (requestError) =>
+            {
+                if(requestError.limitedUntilTimeStamp > 0)
+                {
+                    return (requestError.limitedUntilTimeStamp - ServerTimeStamp.Now);
+                }
+                else if(!requestError.isRequestUnresolvable)
+                {
+                    if(requestError.isServerUnreachable)
+                    {
+                        return 60;
+                    }
+                    else
+                    {
+                        return 15;
+                    }
+                }
+                else
+                {
+                    return 0;
+                }
+            };
+
+            // get all current versions
+            List<int> modIds = new List<int>(installedModVersions.Count);
+            foreach(ModfileIdPair idPair in installedModVersions)
+            {
+                modIds.Add(idPair.modId);
+            }
+
+            // - fetch and compare all the installed versions to the remote mod profiles -
+            RequestFilter modFilter = new RequestFilter();
+            modFilter.fieldFilters[GetAllModsFilterFields.id]
+            = new InArrayFilter<int>()
+            {
+                filterArray = modIds.ToArray()
+            };
+
+            while(!isRequestResolved
+                  && attemptCount < 2)
+            {
+                bool isDone = false;
+                WebRequestError error = null;
+                List<ModProfile> profiles = null;
+
+                ModManager.FetchAllResultsForQuery<ModProfile>((p,s,e) => APIClient.GetAllMods(modFilter,p,s,e),
+                (r) =>
+                {
+                    profiles = r;
+                    isDone = true;
+                },
+                (e) =>
+                {
+                    error = e;
+                    isDone = true;
+                });
+
+                while(!isDone) { yield return null; }
+
+                if(error != null)
+                {
+                    WebRequestError.LogAsWarning(error);
+
+                    if(error.isAuthenticationInvalid)
+                    {
+                        yield break;
+                    }
+                    else if(error.isRequestUnresolvable)
+                    {
+                        isRequestResolved = true;
+                    }
+                    else
+                    {
+                        ++attemptCount;
+
+                        int reattemptDelay = calcReattemptDelay(error);
+                        yield return new WaitForSeconds(reattemptDelay);
+                    }
+                }
+                else
+                {
+                    foreach(ModProfile profile in profiles)
+                    {
+                        foreach(ModfileIdPair idPair in installedModVersions)
+                        {
+                            if(idPair.modId == profile.id)
+                            {
+                                if(idPair.modfileId != profile.currentBuild.id)
+                                {
+                                    updatedModVersions.Add(profile.currentBuild);
+                                }
+                                break;
+                            }
+                        }
+                    }
+
+                    isRequestResolved = true;
+                }
+            }
+
+            // - download and install any updates sequentially -
+            foreach(Modfile updatedBuild in updatedModVersions)
+            {
+                isRequestResolved = false;
+                attemptCount = 0;
+
+                int modId = updatedBuild.modId;
+                int modfileId = updatedBuild.id;
+
+                while(!isRequestResolved
+                      && attemptCount < 2)
+                {
+                    bool isDone = false;
+                    WebRequestError error = null;
+
+                    string zipFilePath = CacheClient.GenerateModBinaryZipFilePath(modId, modfileId);
+                    bool isDownloadedAndValid = (System.IO.File.Exists(zipFilePath)
+                                                 && updatedBuild.fileSize == IOUtilities.GetFileSize(zipFilePath)
+                                                 && updatedBuild.fileHash != null
+                                                 && updatedBuild.fileHash.md5 == IOUtilities.CalculateFileMD5Hash(zipFilePath));
+
+                    // is installed
+                    if(Directory.Exists(GetModInstallDirectory(modId, modfileId)))
+                    {
+                        isRequestResolved = true;
+                        break;
+                    }
+                    // is downloaded
+                    else if(isDownloadedAndValid)
+                    {
+                        isRequestResolved = ModManager.TryInstallMod(modId, modfileId, true);
+                        ++attemptCount;
+                    }
+                    // is the downloadLocator valid?
+                    else if(updatedBuild.downloadLocator.dateExpires <= ServerTimeStamp.Now)
+                    {
+                        Modfile modfile = null;
+
+                        APIClient.GetModfile(modId, modfileId,
+                        (r) =>
+                        {
+                            modfile = r;
+                            isDone = true;
+                        },
+                        (e) =>
+                        {
+                            error = e;
+                            isDone = true;
+                        });
+
+                        while(!isDone) { yield return null; }
+
+                        if(error != null)
+                        {
+                            WebRequestError.LogAsWarning(error);
+
+                            if(error.isAuthenticationInvalid)
+                            {
+                                yield break;
+                            }
+                            else if(error.isRequestUnresolvable)
+                            {
+                                isRequestResolved = true;
+                            }
+                            else
+                            {
+                                ++attemptCount;
+
+                                int reattemptDelay = calcReattemptDelay(error);
+                                yield return new WaitForSeconds(reattemptDelay);
+                            }
+                        }
+                        else
+                        {
+                            updatedBuild.downloadLocator = modfile.downloadLocator;
+                        }
+
+                        continue;
+                    }
+                    // downloadLocator is valid, but not downloaded
+                    else
+                    {
+                        // check if already downloading
+                        if(DownloadClient.GetActiveModBinaryDownload(modId, modfileId) != null)
+                        {
+                            isRequestResolved = true;
+                            break;
+                        }
+
+                        FileDownloadInfo downloadInfo = DownloadClient.StartModBinaryDownload(updatedBuild, zipFilePath);
+
+                        while(!downloadInfo.isDone) { yield return null; }
+
+                        if(downloadInfo.error != null)
+                        {
+                            ++attemptCount;
+
+                            WebRequestError.LogAsWarning(downloadInfo.error);
+
+                            if(downloadInfo.error.isAuthenticationInvalid)
+                            {
+                                yield break;
+                            }
+                            else if(downloadInfo.error.isRequestUnresolvable)
+                            {
+                                isRequestResolved = true;
+                            }
+                            else
+                            {
+                                int reattemptDelay = calcReattemptDelay(downloadInfo.error);
+                                yield return new WaitForSeconds(reattemptDelay);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1039,7 +1269,7 @@ namespace ModIO
                         var parameters = new DeleteModTagsParameters();
                         parameters.tagNames = removedTags.ToArray();
                         APIClient.DeleteModTags(profile.id, parameters,
-                                             doNextSubmissionAction, modSubmissionFailed);
+                                                () => doNextSubmissionAction(null), modSubmissionFailed);
                     });
                 }
                 if(addedTags.Count > 0)
@@ -1091,7 +1321,7 @@ namespace ModIO
                         var parameters = new DeleteModKVPMetadataParameters();
                         parameters.metadataKeys = removedKVPs.Keys.ToArray();
                         APIClient.DeleteModKVPMetadata(profile.id, parameters,
-                                                       doNextSubmissionAction,
+                                                       () => doNextSubmissionAction(null),
                                                        modSubmissionFailed);
                     });
                 }
@@ -1177,13 +1407,7 @@ namespace ModIO
 
                 if(onError != null)
                 {
-                    WebRequestError error = new WebRequestError()
-                    {
-                        message = "Unable to zip mod binary prior to uploading",
-                        url = binaryZipLocation,
-                        timeStamp = ServerTimeStamp.Now,
-                        responseCode = 0,
-                    };
+                    WebRequestError error = WebRequestError.GenerateLocal("Unable to zip mod binary prior to uploading");
 
                     onError(error);
                 }
@@ -1227,13 +1451,7 @@ namespace ModIO
 
                 if(onError != null)
                 {
-                    WebRequestError error = new WebRequestError()
-                    {
-                        message = "Unable to zip mod binary prior to uploading",
-                        url = binaryZipLocation,
-                        timeStamp = ServerTimeStamp.Now,
-                        responseCode = 0,
-                    };
+                    WebRequestError error = WebRequestError.GenerateLocal("Unable to zip mod binary prior to uploading");
 
                     onError(error);
                 }
@@ -1344,7 +1562,6 @@ namespace ModIO
         }
 
         // ---------[ USER DATA ]---------
-        [Obsolete]
         public static void GetAuthenticatedUserProfile(Action<UserProfile> onSuccess,
                                                        Action<WebRequestError> onError)
         {
@@ -1353,6 +1570,20 @@ namespace ModIO
                 ModManager.GetUserProfile(UserAuthenticationData.instance.userId,
                                           onSuccess,
                                           onError);
+            }
+            else if(!string.IsNullOrEmpty(UserAuthenticationData.instance.token))
+            {
+                APIClient.GetAuthenticatedUser(
+                (p) =>
+                {
+                    CacheClient.SaveUserProfile(p);
+
+                    if(onSuccess != null)
+                    {
+                        onSuccess(p);
+                    }
+                },
+                onError);
             }
             else if(onSuccess != null)
             {

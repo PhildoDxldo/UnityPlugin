@@ -7,10 +7,12 @@ namespace ModIO.UI
     public class LoginDialog : MonoBehaviour
     {
         // ---------[ FIELDS ]---------
-        public event Action<APIMessage> onSecurityCodeSent;
-        public event Action<string> onUserOAuthTokenReceived;
         public event Action<string> onInvalidSubmissionAttempted;
-        public event Action<WebRequestError> onAPIRequestError;
+        public event Action<string> onEmailRefused;
+        public event Action<APIMessage> onSecurityCodeSent;
+        public event Action<string> onSecurityCodeRefused;
+        public event Action<string> onUserOAuthTokenReceived;
+        public event Action<WebRequestError> onWebRequestError;
 
         [Serializable]
         public struct InputStateDisplays
@@ -23,6 +25,9 @@ namespace ModIO.UI
         [Header("Settings")]
         [Tooltip("Invalid Submission Message")]
         public string invalidSubmissionMessage = "Input needs to be either a valid email address or the 5-Digit authentication code.";
+        [Tooltip("Email Refused Message")]
+        public string emailRefusedMessage = ("The email address was rejected by the mod.io server."
+                                             + "\nPlease correct any mistakes, or try another email address.");
 
         [Header("UI Components")]
         [Tooltip("Objects to toggle depending on the state of the input field validation.")]
@@ -47,7 +52,6 @@ namespace ModIO.UI
                 }
             });
 
-
             this.onSecurityCodeSent += (m) =>
             {
                 inputField.text = string.Empty;
@@ -57,11 +61,6 @@ namespace ModIO.UI
             this.onUserOAuthTokenReceived += (t) =>
             {
                 inputField.text = string.Empty;
-                inputField.interactable = true;
-            };
-
-            this.onAPIRequestError += (e) =>
-            {
                 inputField.interactable = true;
             };
         }
@@ -97,13 +96,13 @@ namespace ModIO.UI
             {
                 APIClient.SendSecurityCode(trimmedInput,
                                            (m) => onSecurityCodeSent(m),
-                                           (e) => onAPIRequestError(e));
+                                           (e) => ProcessWebRequestError(e, false));
             }
             else if(Utility.IsSecurityCode(trimmedInput))
             {
                 APIClient.GetOAuthToken(trimmedInput.ToUpper(),
                                         (s) => onUserOAuthTokenReceived(s),
-                                        (e) => onAPIRequestError(e));
+                                        (e) => ProcessWebRequestError(e, true));
             }
             else
             {
@@ -114,6 +113,36 @@ namespace ModIO.UI
                     onInvalidSubmissionAttempted(invalidSubmissionMessage);
                 }
             }
+        }
+
+        private void ProcessWebRequestError(WebRequestError e, bool isSecurityCode)
+        {
+            if(e.webRequest.responseCode == 401
+               && isSecurityCode)
+            {
+                if(onSecurityCodeRefused != null)
+                {
+                    onSecurityCodeRefused(e.errorMessage);
+                }
+            }
+            else if(e.webRequest.responseCode == 422
+                    && !isSecurityCode)
+            {
+                if(onEmailRefused != null)
+                {
+                    onEmailRefused(emailRefusedMessage);
+                }
+            }
+            else
+            {
+                if(onWebRequestError != null)
+                {
+                    onWebRequestError(e);
+                }
+            }
+
+
+            inputField.interactable = true;
         }
 
         private System.Collections.IEnumerator DisableInteractivity(float seconds)
