@@ -16,8 +16,8 @@ namespace ModIO.UI
         public event Action<ModProfile> disableRequested;
 
         [Header("Settings")]
-        public GameObject versionHistoryItemPrefab;
-        public string missingVersionChangelogText;
+        public GameObject versionHistoryItemPrefab = null;
+        public string missingVersionChangelogText = "<i>None recorded.</i>";
 
         [Header("UI Components")]
         public ModView modView;
