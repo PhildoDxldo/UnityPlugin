@@ -263,7 +263,7 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_RootOrder: 0
---- !u!213 &243085796
+--- !u!213 &224367622
 Sprite:
   m_ObjectHideFlags: 0
   m_PrefabParentObject: {fileID: 0}
@@ -304,7 +304,7 @@ Sprite:
     textureRectOffset: {x: 0, y: 0}
     settingsRaw: 64
     uvTransform: {x: 100, y: 0, z: 100, w: 0}
---- !u!213 &1322534258
+--- !u!213 &1058182913
 Sprite:
   m_ObjectHideFlags: 0
   m_PrefabParentObject: {fileID: 0}
@@ -642,7 +642,7 @@ Prefab:
     - target: {fileID: 11456306, guid: c96d39f632163b54c9187d6c26330619, type: 2}
       propertyPath: m_Sprite
       value: 
-      objectReference: {fileID: 1322534258}
+      objectReference: {fileID: 1058182913}
     m_RemovedComponents: []
   m_ParentPrefab: {fileID: 100100000, guid: c96d39f632163b54c9187d6c26330619, type: 2}
   m_IsPrefabParent: 0
