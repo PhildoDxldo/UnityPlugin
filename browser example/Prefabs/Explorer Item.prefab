@@ -61,6 +61,7 @@ GameObject:
   - 222: {fileID: 22283396}
   - 114: {fileID: 11475402}
   - 114: {fileID: 11439756}
+  - 114: {fileID: 11497858}
   m_Layer: 5
   m_Name: Button+Mask
   m_TagString: Untagged
@@ -1693,6 +1694,18 @@ MonoBehaviour:
   innerElements:
   - {fileID: 11421186}
   scheme: {fileID: 11400000, guid: 4d36422ba44f94cbda72289386280ccc, type: 2}
+--- !u!114 &11497858
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_PrefabParentObject: {fileID: 0}
+  m_PrefabInternal: {fileID: 100100000}
+  m_GameObject: {fileID: 109328}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8ad37f90dfd749841a241ce6b7543c0c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_aspectMode: 3
 --- !u!114 &11499780
 MonoBehaviour:
   m_ObjectHideFlags: 1
@@ -2170,7 +2183,7 @@ RectTransform:
   m_GameObject: {fileID: 109328}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_LocalScale: {x: 0, y: 0, z: 1}
   m_Children:
   - {fileID: 22422866}
   - {fileID: 22491826}
@@ -2178,10 +2191,10 @@ RectTransform:
   m_Father: {fileID: 22487452}
   m_RootOrder: 1
   m_AnchorMin: {x: 0, y: 0}
-  m_AnchorMax: {x: 1, y: 1}
+  m_AnchorMax: {x: 0, y: 0}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 0, y: 0}
-  m_Pivot: {x: 0.5, y: 0.5}
+  m_SizeDelta: {x: 360, y: 322}
+  m_Pivot: {x: 0, y: 0}
 --- !u!224 &22482820
 RectTransform:
   m_ObjectHideFlags: 1
