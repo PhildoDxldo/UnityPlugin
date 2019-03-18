@@ -10,7 +10,7 @@ namespace ModIO.UI.Editor
     {
         private void OnEnable()
         {
-            Tools.hidden = ((target as ScaleFitter).aspectMode != ScaleFitter.AspectMode.Disabled);
+            Tools.hidden = ((target as ScaleFitter).scaleMode != ScaleFitter.ScaleMode.Disabled);
         }
         private void OnDisable()
         {
@@ -18,7 +18,7 @@ namespace ModIO.UI.Editor
         }
         private void OnSceneGUI()
         {
-            Tools.hidden = ((target as ScaleFitter).aspectMode != ScaleFitter.AspectMode.Disabled);
+            Tools.hidden = ((target as ScaleFitter).scaleMode != ScaleFitter.ScaleMode.Disabled);
         }
     }
 }

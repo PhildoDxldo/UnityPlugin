@@ -14,180 +14,255 @@ namespace ModIO.UI
     /// <summary>Scales a RectTransform to fit its parent.</summary>
     public class ScaleFitter : UIBehaviour, ILayoutSelfController
     {
-        /// <summary>
-        /// Specifies a mode to use to enforce an aspect ratio.
-        /// </summary>
-        public enum AspectMode
+        // ---------[ NESTED TYPES ]---------
+        /// <summary>Methods of scaling. Similar to AspectRatioFitter.AspectMode.</summary>
+        public enum ScaleMode
         {
+            /// <summary>Effectively disables the scaling.</summary>
             Disabled,
 
-            /// <summary>
-            /// Changes the height of the rectangle to match the aspect ratio.
-            /// </summary>
+            /// <summary>Maintains the aspect ratio, scaling to fill the parent width-wise.</summary>
             WidthControlsHeight,
-            /// <summary>
-            /// Changes the width of the rectangle to match the aspect ratio.
-            /// </summary>
+
+            /// <summary>Maintains the aspect ratio, scaling to fill the parent height-wise.</summary>
             HeightControlsWidth,
-            /// <summary>
-            /// Sizes the rectangle such that it's fully contained within the parent rectangle.
-            /// </summary>
+
+            /// <summary>Maintains the aspect ratio, scaling to the largest size that fits the parent.</summary>
             FitInParent,
-            /// <summary>
-            /// Sizes the rectangle such that the parent rectangle is fully contained within.
-            /// </summary>
+
+            /// <summary>Maintains the aspect ratio, scaling to size necessary to envelope the parent.</summary>
             EnvelopeParent,
 
-            StretchIgnoreAspect,
+            /// <summary>Matches the size of the parent, ignoring the aspect ratio.</summary>
+            Stretch,
         }
 
-        [SerializeField] private AspectMode m_aspectMode = AspectMode.Disabled;
+        // ---------[ FIELDS ]---------
+        /// <summary>The method of scaling used.</summary>
+        [SerializeField] private ScaleMode m_scaleMode = ScaleMode.Disabled;
 
-        /// <summary>
-        /// The mode to use to enforce the aspect ratio.
-        /// </summary>
-        public AspectMode aspectMode
+        /// <summary>RectTransform component sibling.</summary>
+        [System.NonSerialized] private RectTransform m_rect;
+
+        /// <summary>DrivenRectTransformTracker</summary>
+        private DrivenRectTransformTracker m_tracker;
+
+        // Copied from UnityEngine.UI.AspectRatioFitter:
+        // This "delayed" mechanism is required for case 1014834.
+        private bool m_delayedSetDirty = false;
+
+
+        // --- ACCESSORS ---
+        /// <summary>The method of scaling used.</summary>
+        public virtual ScaleMode scaleMode
         {
-            get { return m_aspectMode; }
+            get { return m_scaleMode; }
             set
             {
-                if(m_aspectMode != value)
+                if(m_scaleMode != value)
                 {
-                    m_aspectMode = value;
+                    m_scaleMode = value;
                     SetDirty();
                 }
             }
         }
 
-        [System.NonSerialized]
-        private RectTransform m_Rect;
-
-        // This "delayed" mechanism is required for case 1014834.
-        private bool m_DelayedSetDirty = false;
-
-        private RectTransform rectTransform
+        /// <summary>RectTransform component sibling.</summary>
+        protected RectTransform rectTransform
         {
             get
             {
-                if (m_Rect == null)
-                    m_Rect = GetComponent<RectTransform>();
-                return m_Rect;
+                if (m_rect == null)
+                    m_rect = GetComponent<RectTransform>();
+                return m_rect;
             }
         }
 
-        private DrivenRectTransformTracker m_Tracker;
+        /// <summary>Gets the size of the parent transform.</summary>
+        protected virtual Vector2 GetParentSize()
+        {
+            RectTransform parent = rectTransform.parent as RectTransform;
+            if (!parent)
+                return Vector2.zero;
+            return parent.rect.size;
+        }
 
+        /// <summary>Gets the size of this GameObject's transform.</summary>
+        protected virtual Vector2 GetThisSize()
+        {
+            return rectTransform.rect.size;
+        }
+
+        // ---------[ INITIALIZATION ]---------
         protected ScaleFitter() {}
 
+        /// <summary>Queues an UpdateRectScale().</summary>
         protected override void OnEnable()
         {
             base.OnEnable();
             SetDirty();
         }
 
+        /// <summary>Resets the values controlled by the ScaleFitter.</summary>
         protected override void OnDisable()
         {
-            m_Tracker.Clear();
+            rectTransform.localScale = new Vector3(1f, 1f, rectTransform.localScale.z);
+            m_tracker.Clear();
             LayoutRebuilder.MarkLayoutForRebuild(rectTransform);
             base.OnDisable();
         }
 
-        /// <summary>
-        /// Update the rect based on the delayed dirty.
-        /// Got around issue of calling onValidate from OnEnable function.
-        /// </summary>
+        // ---------[ SCALE UPDATING ]---------
+        /// <summary>Calls UpdateRectScale if necessary.</summary>
         protected virtual void Update()
         {
             bool hasParentChanged = (rectTransform.parent != null
                                      && rectTransform.parent.hasChanged);
-            if (m_DelayedSetDirty
+            if (m_delayedSetDirty
                 || hasParentChanged)
             {
-                m_DelayedSetDirty = false;
+                m_delayedSetDirty = false;
                 SetDirty();
             }
         }
 
-        /// <summary>
-        /// Function called when this RectTransform or parent RectTransform has changed dimensions.
-        /// </summary>
+        /// <summary>Called when this RectTransform changes.</summary>
         protected override void OnRectTransformDimensionsChange()
         {
-            UpdateRect();
+            UpdateRectScale();
         }
 
+        /// <summary>Called if the RectTransform's parent is changed.</summary>
         protected override void OnTransformParentChanged()
         {
-            UpdateRect();
+            UpdateRectScale();
         }
 
-        protected void UpdateRect()
+        /// <summary>Updates the scale property of the RectTransform.</summary>
+        protected virtual void UpdateRectScale()
         {
-            m_Tracker.Clear();
+            m_tracker.Clear();
 
-            if(m_aspectMode == AspectMode.Disabled)
+            if(m_scaleMode == ScaleMode.Disabled)
             {
                 rectTransform.localScale = new Vector3(1f, 1f, rectTransform.localScale.z);
             }
 
             if (!IsActive()
-                || m_aspectMode == AspectMode.Disabled)
+                || m_scaleMode == ScaleMode.Disabled)
             {
                 return;
             }
 
-            // add tracker
-            m_Tracker.Add(this, rectTransform,
+            ScaleMode calcMode = GetCalculationMode(m_scaleMode);
+            Vector3 scale = CalculateScaleValues(calcMode);
+            ApplyCalculatedValues(scale, calcMode);
+        }
+
+        /// <summary>Determines the scale mode to use for calculations.</summary>
+        protected virtual ScaleMode GetCalculationMode(ScaleMode selectedScaleMode)
+        {
+            ScaleMode scaleMode = selectedScaleMode;
+            Vector2 thisSize = rectTransform.rect.size;
+
+            if(thisSize.x == 0f)
+            {
+                if(scaleMode == ScaleMode.WidthControlsHeight)
+                {
+                    scaleMode = ScaleMode.Disabled;
+                }
+                else if(scaleMode == ScaleMode.FitInParent
+                        || scaleMode == ScaleMode.EnvelopeParent)
+                {
+                    scaleMode = ScaleMode.HeightControlsWidth;
+                }
+            }
+
+            if(thisSize.y == 0f)
+            {
+                if(scaleMode == ScaleMode.HeightControlsWidth)
+                {
+                    scaleMode = ScaleMode.Disabled;
+                }
+                else if(scaleMode == ScaleMode.FitInParent
+                        || scaleMode == ScaleMode.EnvelopeParent)
+                {
+                    scaleMode = ScaleMode.WidthControlsHeight;
+                }
+            }
+
+            return scaleMode;
+        }
+
+        /// <summary>Calculates the scale necessary using the given scale mode.</summary>
+        protected virtual Vector3 CalculateScaleValues(ScaleMode calculationScaleMode)
+        {
+            // calc scales
+            Vector2 parentSize = GetParentSize();
+            Vector2 thisSize = GetThisSize();
+
+            float xScale = 1f;
+            float yScale = 1f;
+            float zScale = rectTransform.localScale.z;
+
+            // apply scaling
+            switch(calculationScaleMode)
+            {
+                // case ScaleMode.Disabled:
+                // No modifications necessary
+
+                case ScaleMode.WidthControlsHeight:
+                {
+                    xScale = parentSize.x / thisSize.x;
+                    yScale = xScale;
+                    break;
+                }
+                case ScaleMode.HeightControlsWidth:
+                {
+                    yScale = parentSize.y / thisSize.y;
+                    xScale = yScale;
+                    break;
+                }
+                case ScaleMode.FitInParent:
+                {
+                    xScale = yScale = Mathf.Min(parentSize.x / thisSize.x,
+                                                parentSize.y / thisSize.y);
+                    break;
+                }
+                case ScaleMode.EnvelopeParent:
+                {
+                    xScale = yScale = Mathf.Max(parentSize.x / thisSize.x,
+                                                parentSize.y / thisSize.y);
+                    break;
+                }
+                case ScaleMode.Stretch:
+                {
+                    xScale = parentSize.x / thisSize.x;
+                    yScale = parentSize.y / thisSize.y;
+                    break;
+                }
+            }
+
+            return new Vector3(xScale, yScale, zScale);
+        }
+
+        /// <summary>Applies the scale and driven properties as necessary.</summary>
+        protected virtual void ApplyCalculatedValues(Vector3 calculcatedLocalScale,
+                                                     ScaleMode calculcationScaleMode)
+        {
+            // apply scale
+            m_tracker.Add(this, rectTransform,
                           DrivenTransformProperties.ScaleX
                           | DrivenTransformProperties.ScaleY);
 
-            // calc scales
-            AspectMode calcMode = m_aspectMode;
-            Vector2 parentSize = GetParentSize();
-            Vector2 thisSize = rectTransform.rect.size;
+            rectTransform.localScale = calculcatedLocalScale;
 
-            float xScale = 1f;
-            if(thisSize.x != 0f)
+            // control anchors
+            if(m_scaleMode == ScaleMode.FitInParent
+               || m_scaleMode == ScaleMode.EnvelopeParent
+               || m_scaleMode == ScaleMode.Stretch)
             {
-                xScale = parentSize.x / thisSize.x;
-            }
-            else
-            {
-                if(calcMode == AspectMode.WidthControlsHeight)
-                {
-                    calcMode = AspectMode.Disabled;
-                }
-                else if(calcMode == AspectMode.FitInParent
-                        || calcMode == AspectMode.EnvelopeParent)
-                {
-                    calcMode = AspectMode.HeightControlsWidth;
-                }
-            }
-
-            float yScale = 1f;
-            if(thisSize.y != 0f)
-            {
-                yScale = parentSize.y / thisSize.y;
-            }
-            else
-            {
-                if(calcMode == AspectMode.HeightControlsWidth)
-                {
-                    calcMode = AspectMode.Disabled;
-                }
-                else if(calcMode == AspectMode.FitInParent
-                        || calcMode == AspectMode.EnvelopeParent)
-                {
-                    calcMode = AspectMode.WidthControlsHeight;
-                }
-            }
-
-            // add anchor control
-            if(m_aspectMode == AspectMode.FitInParent
-               || m_aspectMode == AspectMode.EnvelopeParent
-               || m_aspectMode == AspectMode.StretchIgnoreAspect)
-            {
-                m_Tracker.Add(this, rectTransform,
+                m_tracker.Add(this, rectTransform,
                               DrivenTransformProperties.Anchors
                               | DrivenTransformProperties.AnchoredPosition
                               | DrivenTransformProperties.Pivot);
@@ -199,73 +274,26 @@ namespace ModIO.UI
 
                 rectTransform.anchoredPosition = Vector2.zero;
             }
-
-            // apply scaling
-            switch(calcMode)
-            {
-                case AspectMode.Disabled:
-                {
-                    xScale = yScale = 1f;
-                    break;
-                }
-                case AspectMode.HeightControlsWidth:
-                {
-                    xScale = yScale;
-                    break;
-                }
-                case AspectMode.WidthControlsHeight:
-                {
-                    yScale = xScale;
-                    break;
-                }
-                case AspectMode.FitInParent:
-                {
-                    xScale = yScale = Mathf.Min(xScale, yScale);
-                    break;
-                }
-                case AspectMode.EnvelopeParent:
-                {
-                    xScale = yScale = Mathf.Max(xScale, yScale);
-                    break;
-                }
-                // case AspectMode.StretchIgnoreAspect
-                // No modifications necessary
-            }
-
-            rectTransform.localScale = new Vector3(xScale, yScale, rectTransform.localScale.z);
         }
 
-        private Vector2 GetParentSize()
-        {
-            RectTransform parent = rectTransform.parent as RectTransform;
-            if (!parent)
-                return Vector2.zero;
-            return parent.rect.size;
-        }
-
-        /// <summary>
-        /// Method called by the layout system. Has no effect
-        /// </summary>
-        public virtual void SetLayoutHorizontal() {}
-
-        /// <summary>
-        /// Method called by the layout system. Has no effect
-        /// </summary>
-        public virtual void SetLayoutVertical() {}
-
-        /// <summary>
-        /// Mark the AspectRatioFitter as dirty.
-        /// </summary>
+        // ---------[ EVENTS ]---------
+        /// <summary>Mark the ScaleFitter as dirty.</summary>
         protected void SetDirty()
         {
-            UpdateRect();
+            UpdateRectScale();
         }
 
-    #if UNITY_EDITOR
+        /// <summary>ILayoutSelfController stub. Has no effect.</summary>
+        public virtual void SetLayoutHorizontal() {}
+
+        /// <summary>ILayoutSelfController stub. Has no effect.</summary>
+        public virtual void SetLayoutVertical() {}
+
+        #if UNITY_EDITOR
         protected override void OnValidate()
         {
-            m_DelayedSetDirty = true;
+            m_delayedSetDirty = true;
         }
-    #endif
+        #endif
     }
 }
