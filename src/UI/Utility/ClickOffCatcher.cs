@@ -123,11 +123,9 @@ namespace ModIO.UI
             GraphicRaycaster cocGR = cocGO.AddComponent<GraphicRaycaster>();
             cocGR.ignoreReversedGraphics = true;
             cocGR.blockingObjects = GraphicRaycaster.BlockingObjects.None;
-            // cocGR.blockingMask = Everything;
 
             // add canvas renderer
-            CanvasRenderer cocCR = cocGO.AddComponent<CanvasRenderer>();
-            // cocCR.cullTransparentMesh = false;
+            cocGO.AddComponent<CanvasRenderer>();
 
             // add touchable
             cocGO.AddComponent<Touchable>();

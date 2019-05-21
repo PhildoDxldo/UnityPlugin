@@ -201,15 +201,12 @@ namespace ModIO.UI
         private Coroutine m_updatesCoroutine = null;
         private List<int> m_queuedUnsubscribes = new List<int>();
         private List<int> m_queuedSubscribes = new List<int>();
-        private bool m_onlineMode = true;
         private bool m_validOAuthToken = false;
 
         // ---------[ INITIALIZATION ]---------
         private void OnEnable()
         {
             this.m_validOAuthToken = false;
-            this.m_onlineMode = true;
-
             this.StartCoroutine(StartFetchRemoteData());
         }
 
@@ -397,7 +394,7 @@ namespace ModIO.UI
             subscriptionsView.DisplayProfiles(null);
 
             RequestSubscribedModProfiles(subscriptionsView.DisplayProfiles,
-                                         (e) => MessageSystem.QueueWebRequestError("Failed to retrieve subscribed mod profiles\n", e, null));
+                                         WebRequestError.LogAsWarning);
 
             subscriptionsView.gameObject.SetActive(false);
 
@@ -496,12 +493,22 @@ namespace ModIO.UI
                 CloseLoginDialog();
                 LogUserIn(t);
             };
-            loginDialog.onAPIRequestError += (e) =>
+            loginDialog.onWebRequestError += (e) =>
             {
-                MessageSystem.QueueMessage(MessageDisplayData.Type.Error,
-                                           e.message);
+                MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
+                                           e.displayMessage);
             };
             loginDialog.onInvalidSubmissionAttempted += (m) =>
+            {
+                MessageSystem.QueueMessage(MessageDisplayData.Type.Error,
+                                           m);
+            };
+            loginDialog.onEmailRefused += (m) =>
+            {
+                MessageSystem.QueueMessage(MessageDisplayData.Type.Error,
+                                           m);
+            };
+            loginDialog.onSecurityCodeRefused += (m) =>
             {
                 MessageSystem.QueueMessage(MessageDisplayData.Type.Error,
                                            m);
@@ -546,7 +553,12 @@ namespace ModIO.UI
             else
             {
                 yield return this.StartCoroutine(FetchUserProfile());
-                yield return this.StartCoroutine(SynchronizeSubscriptionsWithServer());
+
+                // NOTE(@jackson): There is the potential that the UserProfile request fails
+                if(m_validOAuthToken)
+                {
+                    yield return this.StartCoroutine(SynchronizeSubscriptionsWithServer());
+                }
             }
 
             VerifySubscriptionInstallations();
@@ -557,14 +569,11 @@ namespace ModIO.UI
         private System.Collections.IEnumerator FetchGameProfile()
         {
             bool succeeded = false;
-            bool cancelRequest = false;
 
-            while(!cancelRequest
-                  && !succeeded
-                  && m_onlineMode)
+            while(!succeeded)
             {
                 bool isRequestDone = false;
-                WebRequestError error = null;
+                WebRequestError requestError = null;
 
                 // --- GameProfile ---
                 APIClient.GetGame(
@@ -580,31 +589,59 @@ namespace ModIO.UI
                 },
                 (e) =>
                 {
-                    error = e;
-                    succeeded = false;
+                    requestError = e;
                     isRequestDone = true;
                 });
 
                 while(!isRequestDone) { yield return null; }
 
-                if(error != null)
+                if(requestError != null)
                 {
-                    int secondsUntilRetry;
-                    string displayMessage;
-
-                    ProcessRequestError(error, out cancelRequest,
-                                        out secondsUntilRetry, out displayMessage);
-
-                    if(secondsUntilRetry > 0)
+                    int reattemptDelay = CalculateReattemptDelay(requestError);
+                    if(requestError.isAuthenticationInvalid)
                     {
-                        yield return new WaitForSeconds(secondsUntilRetry + 1);
-                        continue;
-                    }
+                        if(String.IsNullOrEmpty(UserAuthenticationData.instance.token))
+                        {
+                            Debug.LogWarning("[mod.io] Unable to retrieve the game profile from the mod.io"
+                                             + " servers. Please check you Game Id and APIKey in the"
+                                             + " PluginSettings. [Resources/modio_settings]");
 
-                    if(cancelRequest)
+                            MessageSystem.QueueMessage(MessageDisplayData.Type.Error,
+                                                       "Failed to collect game data from mod.io.\n"
+                                                       + requestError.displayMessage);
+                        }
+                        else
+                        {
+                            MessageSystem.QueueMessage(MessageDisplayData.Type.Error,
+                                                       requestError.displayMessage);
+
+                            m_validOAuthToken = false;
+                        }
+
+                        yield break;
+                    }
+                    else if(requestError.isRequestUnresolvable
+                            || reattemptDelay < 0)
+                    {
+                        Debug.LogWarning("[mod.io] Fetching Game Profile failed.\n"
+                                         + requestError.ToUnityDebugString());
+
+                        MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
+                                                   "Failed to collect game data from mod.io.\n"
+                                                   + requestError.displayMessage);
+                        yield break;
+                    }
+                    else
                     {
                         MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
-                                                   displayMessage);
+                                                   "Failed to collect game data from mod.io.\n"
+                                                   + requestError.displayMessage
+                                                   + "\nRetrying in "
+                                                   + reattemptDelay.ToString()
+                                                   + " seconds");
+
+                        yield return new WaitForSeconds(reattemptDelay);
+                        continue;
                     }
                 }
             }
@@ -615,15 +652,12 @@ namespace ModIO.UI
             Debug.Assert(!String.IsNullOrEmpty(UserAuthenticationData.instance.token));
 
             bool succeeded = false;
-            bool cancelRequest = false;
 
             // get user profile
-            while(!cancelRequest
-                  && !succeeded
-                  && m_onlineMode)
+            while(!succeeded)
             {
                 bool isRequestDone = false;
-                WebRequestError error = null;
+                WebRequestError requestError = null;
 
                 // requests
                 APIClient.GetAuthenticatedUser(
@@ -638,37 +672,52 @@ namespace ModIO.UI
                         this.loggedUserView.DisplayUser(u);
                     }
 
-                    error = null;
                     succeeded = true;
                     isRequestDone = true;
                 },
                 (e) =>
                 {
-                    error = e;
-                    succeeded = false;
+                    requestError = e;
                     isRequestDone = true;
                 });
 
                 while(!isRequestDone) { yield return null; }
 
-                if(error != null)
+                if(requestError != null)
                 {
-                    int secondsUntilRetry;
-                    string displayMessage;
-
-                    ProcessRequestError(error, out cancelRequest,
-                                        out secondsUntilRetry, out displayMessage);
-
-                    if(secondsUntilRetry > 0)
+                    int reattemptDelay = CalculateReattemptDelay(requestError);
+                    if(requestError.isAuthenticationInvalid)
                     {
-                        yield return new WaitForSeconds(secondsUntilRetry + 1);
-                        continue;
-                    }
+                        MessageSystem.QueueMessage(MessageDisplayData.Type.Error,
+                                                   requestError.displayMessage);
 
-                    if(cancelRequest)
+                        m_validOAuthToken = false;
+                        yield break;
+                    }
+                    else if(requestError.isRequestUnresolvable
+                            || reattemptDelay < 0)
+                    {
+                        Debug.LogWarning("[mod.io] Fetching User Profile failed."
+                                         + requestError.ToUnityDebugString());
+
+                        MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
+                                                   "Failed to collect user profile data from mod.io.\n"
+                                                   + requestError.displayMessage);
+
+                        m_validOAuthToken = false;
+                        yield break;
+                    }
+                    else
                     {
                         MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
-                                                   displayMessage);
+                                                   "Failed to collect user profile data from mod.io.\n"
+                                                   + requestError.displayMessage
+                                                   + "\nRetrying in "
+                                                   + reattemptDelay.ToString()
+                                                   + " seconds");
+
+                        yield return new WaitForSeconds(reattemptDelay);
+                        continue;
                     }
                 }
             }
@@ -680,13 +729,12 @@ namespace ModIO.UI
 
         private System.Collections.IEnumerator SynchronizeSubscriptionsWithServer()
         {
-            Debug.Assert(!String.IsNullOrEmpty(UserAuthenticationData.instance.token));
+            if(!m_validOAuthToken) { yield break; }
 
             int updateStartTimeStamp = ServerTimeStamp.Now;
             int updateCount = 0;
 
             // set up initial vars
-            bool cancelRequest = false;
             bool allPagesReceived = false;
 
             APIPaginationParameters pagination = new APIPaginationParameters()
@@ -703,37 +751,47 @@ namespace ModIO.UI
 
             // loop until done or broken
             while(m_validOAuthToken
-                  && m_onlineMode
-                  && !cancelRequest
                   && !allPagesReceived)
             {
                 bool isRequestDone = false;
-                WebRequestError error = null;
+                WebRequestError requestError = null;
                 RequestPage<ModProfile> requestPage = null;
 
                 APIClient.GetUserSubscriptions(subscriptionFilter, pagination,
                                                (r) => { isRequestDone = true; requestPage = r; },
-                                               (e) => { isRequestDone = true; error = e; });
+                                               (e) => { isRequestDone = true; requestError = e; });
 
                 while(!isRequestDone) { yield return null; }
 
-                if(error != null)
+                if(requestError != null)
                 {
-                    // handle error
-                    int secondsUntilRetry;
-                    string displayMessage;
+                    int reattemptDelay = CalculateReattemptDelay(requestError);
+                    if(requestError.isAuthenticationInvalid)
+                    {
+                        MessageSystem.QueueMessage(MessageDisplayData.Type.Error,
+                                                   requestError.displayMessage);
 
-                    ProcessRequestError(error, out cancelRequest,
-                                        out secondsUntilRetry, out displayMessage);
-
-                    if(cancelRequest)
+                        m_validOAuthToken = false;
+                        yield break;
+                    }
+                    else if(requestError.isRequestUnresolvable
+                            || reattemptDelay < 0)
                     {
                         MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
-                                                   displayMessage);
+                                                   "Failed to synchronize subscriptions with mod.io servers.\n"
+                                                   + requestError.displayMessage);
+                        yield break;
                     }
-                    else if(secondsUntilRetry > 0)
+                    else
                     {
-                        yield return new WaitForSeconds(secondsUntilRetry + 1);
+                        MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
+                                                   "Failed to synchronize subscriptions with mod.io servers.\n"
+                                                   + requestError.displayMessage
+                                                   + "\nRetrying in "
+                                                   + reattemptDelay.ToString()
+                                                   + " seconds");
+
+                        yield return new WaitForSeconds(reattemptDelay);
                         continue;
                     }
                 }
@@ -825,7 +883,6 @@ namespace ModIO.UI
             }
 
             // set up initial vars
-            bool cancelRequest = false;
             bool allPagesReceived = false;
 
             APIPaginationParameters pagination = new APIPaginationParameters()
@@ -834,47 +891,55 @@ namespace ModIO.UI
                 offset = 0,
             };
 
-            RequestFilter subscriptionFilter = new RequestFilter();
-            subscriptionFilter.fieldFilters.Add(ModIO.API.GetAllModsFilterFields.gameId,
-                                                new EqualToFilter<int>() { filterValue = m_gameProfile.id });
-            subscriptionFilter.fieldFilters.Add(ModIO.API.GetAllModsFilterFields.id,
-                                                new InArrayFilter<int>()
-                                                {
-                                                    filterArray = subscribedModIds.ToArray()
-                                                });
+            RequestFilter modFilter = new RequestFilter();
+            modFilter.fieldFilters[ModIO.API.GetAllModsFilterFields.id]
+            = new InArrayFilter<int>()
+            {
+                filterArray = subscribedModIds.ToArray()
+            };
 
             // loop until done or broken
-            while(m_onlineMode
-                  && !cancelRequest
-                  && !allPagesReceived)
+            while(!allPagesReceived)
             {
                 bool isRequestDone = false;
-                WebRequestError error = null;
+                WebRequestError requestError = null;
                 RequestPage<ModProfile> requestPage = null;
 
-                APIClient.GetAllMods(subscriptionFilter, pagination,
+                APIClient.GetAllMods(modFilter, pagination,
                                      (r) => { isRequestDone = true; requestPage = r; },
-                                     (e) => { isRequestDone = true; error = e; });
+                                     (e) => { isRequestDone = true; requestError = e; });
 
                 while(!isRequestDone) { yield return null; }
 
-                if(error != null)
+                if(requestError != null)
                 {
-                    // handle error
-                    int secondsUntilRetry;
-                    string displayMessage;
+                    int reattemptDelay = CalculateReattemptDelay(requestError);
+                    if(requestError.isAuthenticationInvalid)
+                    {
+                        MessageSystem.QueueMessage(MessageDisplayData.Type.Error,
+                                                   requestError.displayMessage);
 
-                    ProcessRequestError(error, out cancelRequest,
-                                        out secondsUntilRetry, out displayMessage);
-
-                    if(cancelRequest)
+                        m_validOAuthToken = false;
+                        yield break;
+                    }
+                    else if(requestError.isRequestUnresolvable
+                            || reattemptDelay < 0)
                     {
                         MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
-                                                   displayMessage);
+                                                   "Failed to retrieve subscription data from mod.io servers.\n"
+                                                   + requestError.displayMessage);
+                        yield break;
                     }
-                    else if(secondsUntilRetry > 0)
+                    else
                     {
-                        yield return new WaitForSeconds(secondsUntilRetry + 1);
+                        MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
+                                                   "Failed to retrieve subscription data from mod.io servers.\n"
+                                                   + requestError.displayMessage
+                                                   + "\nRetrying in "
+                                                   + reattemptDelay.ToString()
+                                                   + " seconds");
+
+                        yield return new WaitForSeconds(reattemptDelay);
                         continue;
                     }
                 }
@@ -926,6 +991,8 @@ namespace ModIO.UI
 
         private System.Collections.IEnumerator FetchUserRatings()
         {
+            if(!m_validOAuthToken) { yield break; }
+
             APIPaginationParameters pagination = new APIPaginationParameters();
             RequestFilter filter = new RequestFilter();
             filter.fieldFilters[API.GetUserRatingsFilterFields.gameId]
@@ -934,10 +1001,11 @@ namespace ModIO.UI
             bool isRequestDone = false;
             List<ModRating> retrievedRatings = new List<ModRating>();
 
-            while(!isRequestDone)
+            while(m_validOAuthToken
+                  && !isRequestDone)
             {
                 RequestPage<ModRating> response = null;
-                WebRequestError error = null;
+                WebRequestError requestError = null;
 
                 APIClient.GetUserRatings(filter, pagination,
                                          (r) =>
@@ -947,23 +1015,33 @@ namespace ModIO.UI
                                          },
                                          (e) =>
                                          {
-                                            error = e;
+                                            requestError = e;
                                             isRequestDone = true;
                                          });
 
                 while(!isRequestDone) { yield return null; }
 
-                if(error != null)
+                if(requestError != null)
                 {
-                    // handle error
-                    int secondsUntilRetry;
-                    string displayMessage;
-                    bool cancelRequest;
+                    int reattemptDelay = CalculateReattemptDelay(requestError);
+                    if(requestError.isAuthenticationInvalid)
+                    {
+                        MessageSystem.QueueMessage(MessageDisplayData.Type.Error,
+                                                   requestError.displayMessage);
 
-                    ProcessRequestError(error, out cancelRequest,
-                                        out secondsUntilRetry, out displayMessage);
-
-                    break;
+                        m_validOAuthToken = false;
+                        yield break;
+                    }
+                    else if(requestError.isRequestUnresolvable
+                            || reattemptDelay < 0)
+                    {
+                        yield break;
+                    }
+                    else
+                    {
+                        yield return new WaitForSeconds(reattemptDelay);
+                        continue;
+                    }
                 }
                 else
                 {
@@ -1058,98 +1136,29 @@ namespace ModIO.UI
         }
 
         // ---------[ REQUESTS ]---------
-        private void ProcessRequestError(WebRequestError requestError,
-                                         out bool cancelFurtherAttempts,
-                                         out int reattemptDelaySeconds,
-                                         out string displayMessage)
+        private int CalculateReattemptDelay(WebRequestError requestError)
         {
-            cancelFurtherAttempts = false;
+            Debug.Assert(requestError != null);
 
-            switch(requestError.responseCode)
+            if(requestError.limitedUntilTimeStamp > 0)
             {
-                // Bad authorization
-                case 401:
+                return (requestError.limitedUntilTimeStamp - ServerTimeStamp.Now);
+            }
+            else if(!requestError.isRequestUnresolvable)
+            {
+                if(requestError.isServerUnreachable
+                   && requestError.webRequest.responseCode > 0)
                 {
-                    reattemptDelaySeconds = -1;
-                    displayMessage = ("Your mod.io user authorization details have changed."
-                                      + "\nLogging out and in again should correct this issue.");
-                    cancelFurtherAttempts = true;
-
-                    m_validOAuthToken = false;
+                    return 60;
                 }
-                break;
-
-                // Not found
-                case 404:
-                // Gone
-                case 410:
+                else
                 {
-                    reattemptDelaySeconds = -1;
-                    displayMessage = requestError.message;
-
-                    cancelFurtherAttempts = true;
+                    return 15;
                 }
-                break;
-
-                // Over limit
-                case 429:
-                {
-                    string sur_string;
-                    if(!(requestError.responseHeaders.TryGetValue("X-Ratelimit-RetryAfter", out sur_string)
-                         && Int32.TryParse(sur_string, out reattemptDelaySeconds)))
-                    {
-                        reattemptDelaySeconds = 60;
-
-                        Debug.LogWarning("[mod.io] Too many APIRequests have been made, however"
-                                         + " no valid X-Ratelimit-RetryAfter header was detected."
-                                         + "\nPlease report this to mod.io staff.");
-                    }
-
-                    displayMessage = requestError.message;
-                }
-                break;
-
-                // Internal server error
-                case 500:
-                {
-                    reattemptDelaySeconds = -1;
-                    displayMessage = ("There was an error with the mod.io servers. Staff have been"
-                                      + " notified, and will attempt to fix the issue as soon as possible.");
-                    cancelFurtherAttempts = true;
-                }
-                break;
-
-                // Service Unavailable
-                case 503:
-                {
-                    reattemptDelaySeconds = -1;
-                    displayMessage = ("The mod.io servers are currently offline. Please try again later.");
-                    cancelFurtherAttempts = true;
-
-                    m_onlineMode = false;
-                }
-                break;
-
-                default:
-                {
-                    // Cannot connect resolve destination host
-                    if(requestError.responseCode <= 0)
-                    {
-                        reattemptDelaySeconds = 60;
-                        displayMessage = ("Unable to connect to the mod.io servers.");
-                    }
-                    else
-                    {
-                        Debug.LogWarning("[mod.io] An unhandled error was returned when retrieving mod updates."
-                                         + "\nPlease report this to mod.io staff with the following information:\n"
-                                         + requestError.ToUnityDebugString());
-
-                        reattemptDelaySeconds = 15;
-                        displayMessage = ("Error synchronizing with the mod.io servers.\n"
-                                          + requestError.message);
-                    }
-                }
-                break;
+            }
+            else
+            {
+                return -1;
             }
         }
 
@@ -1208,7 +1217,7 @@ namespace ModIO.UI
         {
             bool cancelUpdates = false;
 
-            while(m_onlineMode && !cancelUpdates)
+            while(!cancelUpdates)
             {
                 int updateStartTimeStamp = ServerTimeStamp.Now;
 
@@ -1237,32 +1246,31 @@ namespace ModIO.UI
 
                     if(requestError != null)
                     {
-                        int secondsUntilRetry;
-                        string displayMessage;
-
-                        ProcessRequestError(requestError, out cancelUpdates,
-                                            out secondsUntilRetry, out displayMessage);
-
-                        if(secondsUntilRetry > 0)
+                        int reattemptDelay = CalculateReattemptDelay(requestError);
+                        if(requestError.isAuthenticationInvalid)
                         {
-                            MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
-                                                       displayMessage
-                                                       + "\nRetrying in "
-                                                       + secondsUntilRetry.ToString()
-                                                       + " seconds");
+                            MessageSystem.QueueMessage(MessageDisplayData.Type.Error,
+                                                       requestError.displayMessage);
 
-                            yield return new WaitForSeconds(secondsUntilRetry + 1);
-                            continue;
+                            m_validOAuthToken = false;
+                        }
+                        else if(requestError.isRequestUnresolvable
+                                || reattemptDelay < 0)
+                        {
+                            Debug.LogWarning("[mod.io] Polling for user updates failed."
+                                             + requestError.ToUnityDebugString());
                         }
                         else
                         {
                             MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
-                                                       displayMessage);
-                        }
+                                                       "Failed to synchronize subscriptions with mod.io servers.\n"
+                                                       + requestError.displayMessage
+                                                       + "\nRetrying in "
+                                                       + reattemptDelay.ToString()
+                                                       + " seconds");
 
-                        if(cancelUpdates)
-                        {
-                            break;
+                            yield return new WaitForSeconds(reattemptDelay);
+                            continue;
                         }
                     }
                     // This may have changed during the request execution
@@ -1306,33 +1314,23 @@ namespace ModIO.UI
 
                     if(requestError != null)
                     {
-                        int secondsUntilRetry;
-                        string displayMessage;
-
-                        ProcessRequestError(requestError, out cancelUpdates,
-                                            out secondsUntilRetry, out displayMessage);
-
-
-                        if(secondsUntilRetry > 0)
+                        int reattemptDelay = CalculateReattemptDelay(requestError);
+                        if(requestError.isAuthenticationInvalid)
                         {
-                            MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
-                                                       displayMessage
-                                                       + "\nRetrying in "
-                                                       + secondsUntilRetry.ToString()
-                                                       + " seconds");
+                            MessageSystem.QueueMessage(MessageDisplayData.Type.Error,
+                                                       requestError.displayMessage);
 
-                            yield return new WaitForSeconds(secondsUntilRetry + 1);
-                            continue;
+                            m_validOAuthToken = false;
+                        }
+                        else if(requestError.isRequestUnresolvable
+                                || reattemptDelay < 0)
+                        {
+                            cancelUpdates = true;
                         }
                         else
                         {
-                            MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
-                                                       displayMessage);
-                        }
-
-                        if(cancelUpdates)
-                        {
-                            break;
+                            yield return new WaitForSeconds(reattemptDelay);
+                            continue;
                         }
                     }
                     else
@@ -1351,35 +1349,64 @@ namespace ModIO.UI
 
         private void PushSubscriptionChanges()
         {
-            Debug.Assert(m_userProfile != null);
-            Debug.Assert(this.m_validOAuthToken);
+            if(!this.m_validOAuthToken) { return; }
 
             // NOTE(@jackson): This is workaround is due to the response of a repeat sub and unsub
             // request returning an error.
             Action<WebRequestError, int> onSubFail = (e, modId) =>
             {
-                if(e.responseCode == 400)
+                // Ignore error for "Mod is already subscribed"
+                if(e.webRequest.responseCode != 400)
                 {
-                    // Mod is already subscribed
+                    if(e.isAuthenticationInvalid)
+                    {
+                        if(m_validOAuthToken)
+                        {
+                            m_validOAuthToken = false;
+                            MessageSystem.QueueMessage(MessageDisplayData.Type.Error,
+                                                       e.displayMessage);
+                        }
+                    }
+                    else
+                    {
+                        MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
+                                                   e.displayMessage);
+                    }
+                }
+
+                if(e.isRequestUnresolvable
+                   && !e.isAuthenticationInvalid)
+                {
                     m_queuedSubscribes.Remove(modId);
                     WriteManifest();
-                }
-                else
-                {
-                    WebRequestError.LogAsWarning(e);
                 }
             };
             Action<WebRequestError, int> onUnsubFail = (e, modId) =>
             {
-                if(e.responseCode == 400)
+                // Ignore error for "Mod is not subscribed"
+                if(e.webRequest.responseCode != 400)
                 {
-                    // Mod is already unsubscribed
+                    if(e.isAuthenticationInvalid)
+                    {
+                        if(m_validOAuthToken)
+                        {
+                            m_validOAuthToken = false;
+                            MessageSystem.QueueMessage(MessageDisplayData.Type.Error,
+                                                       e.displayMessage);
+                        }
+                    }
+                    else
+                    {
+                        MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
+                                                   e.displayMessage);
+                    }
+                }
+
+                if(e.isRequestUnresolvable
+                   && !e.isAuthenticationInvalid)
+                {
                     m_queuedUnsubscribes.Remove(modId);
                     WriteManifest();
-                }
-                else
-                {
-                    WebRequestError.LogAsWarning(e);
                 }
             };
 
@@ -1575,26 +1602,30 @@ namespace ModIO.UI
                     // catch error
                     if(requestError != null)
                     {
-                        int secondsUntilRetry;
-                        string displayMessage;
-                        bool cancel;
+                        if(requestError.isAuthenticationInvalid)
+                        {
+                            MessageSystem.QueueMessage(MessageDisplayData.Type.Error,
+                                                       requestError.displayMessage);
 
-                        ProcessRequestError(requestError, out cancel,
-                                            out secondsUntilRetry, out displayMessage);
-
-                        MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
-                                                   "Failed to update installed mods.\n"
-                                                   + displayMessage);
-
+                            m_validOAuthToken = false;
+                        }
+                        else
+                        {
+                            MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
+                                                       "Failed to update installed mods.\n"
+                                                       + requestError.displayMessage);
+                        }
                         yield break;
                     }
-
-                    // installs
-                    CacheClient.SaveModProfiles(response.items);
-
-                    foreach(ModProfile profile in response.items)
+                    else
                     {
-                        yield return StartCoroutine(DownloadAndInstallModVersion(profile.id, profile.currentBuild.id));
+                        // installs
+                        CacheClient.SaveModProfiles(response.items);
+
+                        foreach(ModProfile profile in response.items)
+                        {
+                            yield return StartCoroutine(DownloadAndInstallModVersion(profile.id, profile.currentBuild.id));
+                        }
                     }
                 }
             }
@@ -1693,8 +1724,8 @@ namespace ModIO.UI
                 modfile = null;
             }
 
+            // get modfile
             while(modfile == null
-                  && m_onlineMode
                   && this.isActiveAndEnabled)
             {
                 APIClient.GetModfile(modId, modfileId,
@@ -1714,29 +1745,47 @@ namespace ModIO.UI
 
                 if(requestError != null)
                 {
-                    bool cancel;
-                    int reattemptDelay;
-                    string message;
+                    ModProfile profile = CacheClient.LoadModProfile(modId);
+                    string modNamePrefix = string.Empty;
+                    if(profile != null)
+                    {
+                        modNamePrefix = profile.name;
+                    }
+                    else
+                    {
+                        modNamePrefix = "Mods have";
+                    }
 
-                    ProcessRequestError(requestError, out cancel,
-                                        out reattemptDelay, out message);
+                    int reattemptDelay = CalculateReattemptDelay(requestError);
+                    if(requestError.isAuthenticationInvalid)
+                    {
+                        MessageSystem.QueueMessage(MessageDisplayData.Type.Error,
+                                                   requestError.displayMessage);
 
-                    if(reattemptDelay > 0)
+                        m_validOAuthToken = false;
+                        yield break;
+                    }
+                    else if(requestError.isRequestUnresolvable
+                            || reattemptDelay < 0)
                     {
                         MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
-                                                   "Mods have failed to download.\n"
-                                                   + message
+                                                   modNamePrefix
+                                                   + " failed to download.\n"
+                                                   + requestError.displayMessage);
+                        yield break;
+                    }
+                    else
+                    {
+                        MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
+                                                   modNamePrefix
+                                                   + " failed to download.\n"
+                                                   + requestError.displayMessage
                                                    + "\nRetrying in "
                                                    + reattemptDelay.ToString()
                                                    + " seconds");
-                        yield return new WaitForSeconds(reattemptDelay + 1);
-                    }
-                    else if(cancel)
-                    {
-                        MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
-                                                   "Mods have failed to download.\n"
-                                                   + message);
-                        yield break;
+
+                        yield return new WaitForSeconds(reattemptDelay);
+                        continue;
                     }
                 }
                 else if(modfile != null)
@@ -1750,18 +1799,9 @@ namespace ModIO.UI
                 }
             }
 
-            if(modfile == null)
-            {
-                Debug.LogWarning("[mod.io] Failed to retrieve the Modfile and thus cannot download"
-                                 + " the mod binary. (ModId: " + modId.ToString() + " - ModfileId: "
-                                 + modfileId.ToString());
-                yield break;
-            }
-
-
+            // get binary
             while(!isBinaryZipValid
-                  && modfile.downloadLocator.dateExpires > ServerTimeStamp.Now
-                  && m_onlineMode)
+                  && modfile.downloadLocator.dateExpires > ServerTimeStamp.Now)
             {
                 FileDownloadInfo downloadInfo = DownloadClient.GetActiveModBinaryDownload(modId, modfileId);
                 if(downloadInfo != null)
@@ -1784,30 +1824,53 @@ namespace ModIO.UI
 
                 if(downloadInfo.error != null)
                 {
-                    bool cancel;
-                    int reattemptDelay;
-                    string message;
+                    ModProfile profile = CacheClient.LoadModProfile(modId);
+                    string modNamePrefix = string.Empty;
+                    if(profile != null)
+                    {
+                        modNamePrefix = profile.name;
+                    }
+                    else
+                    {
+                        modNamePrefix = "Mods have";
+                    }
 
-                    ProcessRequestError(downloadInfo.error, out cancel,
-                                        out reattemptDelay, out message);
+                    int reattemptDelay = CalculateReattemptDelay(downloadInfo.error);
+                    if(downloadInfo.error.isAuthenticationInvalid)
+                    {
+                        MessageSystem.QueueMessage(MessageDisplayData.Type.Error,
+                                                   downloadInfo.error.displayMessage);
 
-                    if(reattemptDelay > 0)
+                        m_validOAuthToken = false;
+                        yield break;
+                    }
+                    else if(downloadInfo.error.isRequestUnresolvable
+                            || reattemptDelay < 0)
                     {
                         MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
-                                                   "Mods have failed to download.\n"
-                                                   + message
+                                                   modNamePrefix
+                                                   + " failed to download.\n"
+                                                   + downloadInfo.error.displayMessage);
+                        yield break;
+                    }
+                    else
+                    {
+                        MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
+                                                   modNamePrefix
+                                                   + " failed to download.\n"
+                                                   + downloadInfo.error.displayMessage
                                                    + "\nRetrying in "
                                                    + reattemptDelay.ToString()
                                                    + " seconds");
-                        yield return new WaitForSeconds(reattemptDelay + 1);
+
+                        yield return new WaitForSeconds(reattemptDelay);
+                        continue;
                     }
-                    else if(cancel)
-                    {
-                        MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
-                                                   "Mods have failed to download.\n"
-                                                   + message);
-                        yield break;
-                    }
+                }
+                else if(downloadInfo.wasAborted)
+                {
+                    // NOTE(@jackson): Done here
+                    yield break;
                 }
                 else
                 {
@@ -1856,7 +1919,7 @@ namespace ModIO.UI
                         MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
                                                    errorMessage);
 
-                        yield return new WaitForSeconds(5);
+                        yield return new WaitForSeconds(5f);
 
                         yield return StartCoroutine(DownloadAndInstallModVersion(modId, modfileId));
 
@@ -1997,7 +2060,10 @@ namespace ModIO.UI
             {
                 foreach(var modView in this.explorerView.modViews)
                 {
-                    yield return modView;
+                    if(modView != null)
+                    {
+                        yield return modView;
+                    }
                 }
             }
 
@@ -2005,7 +2071,10 @@ namespace ModIO.UI
             {
                 foreach(var modView in this.subscriptionsView.modViews)
                 {
-                    yield return modView;
+                    if(modView != null)
+                    {
+                        yield return modView;
+                    }
                 }
             }
         }
@@ -2205,7 +2274,22 @@ namespace ModIO.UI
 
             // request page
             RequestSubscribedModProfiles(subscriptionsView.DisplayProfiles,
-                                         (e) => MessageSystem.QueueWebRequestError("Failed to retrieve subscribed mod profiles\n", e, null));
+                                         (requestError) =>
+                                         {
+                                            if(requestError.isAuthenticationInvalid)
+                                            {
+                                                MessageSystem.QueueMessage(MessageDisplayData.Type.Error,
+                                                                           requestError.displayMessage);
+
+                                                m_validOAuthToken = false;
+                                            }
+                                            else
+                                            {
+                                                MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
+                                                                           "Failed to get subscription data from mod.io servers.\n"
+                                                                           + requestError.displayMessage);
+                                            }
+                                         });
         }
 
         // ---------[ ENABLE/SUBSCRIBE MODS ]---------
@@ -2274,11 +2358,28 @@ namespace ModIO.UI
                     }
                 }
             },
-            WebRequestError.LogAsWarning);
+            (requestError) =>
+            {
+                if(requestError.isAuthenticationInvalid)
+                {
+                    MessageSystem.QueueMessage(MessageDisplayData.Type.Error,
+                                               requestError.displayMessage);
+
+                    m_validOAuthToken = false;
+                }
+                else
+                {
+                    MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
+                                               "Failed to start mod download. It will be retried shortly.\n"
+                                               + requestError.displayMessage);
+                }
+            });
         }
 
         public void OnUnsubscribedFromMod(int modId)
         {
+            DownloadClient.CancelAnyModBinaryDownloads(modId);
+
             // remove from disk
             CacheClient.DeleteAllModfileAndBinaryData(modId);
 
@@ -2316,7 +2417,22 @@ namespace ModIO.UI
                             }
                         }
                     },
-                    WebRequestError.LogAsWarning);
+                    (requestError) =>
+                    {
+                        if(requestError.isAuthenticationInvalid)
+                        {
+                            MessageSystem.QueueMessage(MessageDisplayData.Type.Error,
+                                                       requestError.displayMessage);
+
+                            m_validOAuthToken = false;
+                        }
+                        else
+                        {
+                            MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
+                                                       "Failed to start mod download. It will be retried shortly.\n"
+                                                       + requestError.displayMessage);
+                        }
+                    });
                 }
             }
 
@@ -2346,7 +2462,22 @@ namespace ModIO.UI
 
             // - subscriptionsView -
             RequestSubscribedModProfiles(subscriptionsView.DisplayProfiles,
-                                         (e) => MessageSystem.QueueWebRequestError("Failed to retrieve subscribed mod profiles\n", e, null));
+                                         (requestError) =>
+                                         {
+                                            if(requestError.isAuthenticationInvalid)
+                                            {
+                                                MessageSystem.QueueMessage(MessageDisplayData.Type.Error,
+                                                                           requestError.displayMessage);
+
+                                                m_validOAuthToken = false;
+                                            }
+                                            else
+                                            {
+                                                MessageSystem.QueueMessage(MessageDisplayData.Type.Warning,
+                                                                           "Failed to get subscription data from mod.io servers.\n"
+                                                                           + requestError.displayMessage);
+                                            }
+                                         });
 
             // - inspectorView -
             if(inspectorView.profile != null)

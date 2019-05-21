@@ -3,14 +3,17 @@ using Debug = UnityEngine.Debug;
 
 namespace ModIO
 {
+    /// <summary>A singleton struct that is referenced by multiple classes for user authentication.</summary>
     [System.Serializable]
     public struct UserAuthenticationData
     {
         // ---------[ CONSTANTS ]---------
+        /// <summary>An instance of UserAuthenticationData with zeroed fields.</summary>
         public static readonly UserAuthenticationData NONE = new UserAuthenticationData()
         {
             userId = UserProfile.NULL_ID,
             token = null,
+            steamTicket = null,
         };
 
         /// <summary>Location of the settings file.</summary>
@@ -18,17 +21,31 @@ namespace ModIO
                                                                               "user.data");
 
         // ---------[ FIELDS ]---------
+        /// <summary>User Id associated with the stored OAuthToken.</summary>
         public int userId;
+
+        /// <summary>User authentication token to send with API requests identifying the user.</summary>
         public string token;
 
+        /// <summary>Steam ticket (if applicable).</summary>
+        public string steamTicket;
+
         // ---------[ SINGLETON ]---------
-        /// <summary>Instance for removing need to load.</summary>
+        /// <summary>Singleton instance to be used as the current/active data.</summary>
         private static UserAuthenticationData m_instance;
 
+        /// <summary>Singleton instance to be used as the current/active data.</summary>
         public static UserAuthenticationData instance
         {
             get
             {
+                #if UNITY_EDITOR
+                if(!Application.isPlaying)
+                {
+                    LoadInstance();
+                }
+                #endif
+
                 if(m_instance.Equals(default(UserAuthenticationData)))
                 {
                     LoadInstance();

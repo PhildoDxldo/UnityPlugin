@@ -1,6 +1,4 @@
-﻿// #define DO_NOT_LOAD_CACHE
-
-using System;
+﻿using System;
 using System.IO;
 using System.Collections.Generic;
 
@@ -178,12 +176,14 @@ namespace ModIO
         }
 
         // ------[ STATISTICS ]------
+        /// <summary>Generates the file path for a mod's statitics data.</summary>
         public static string GenerateModStatisticsFilePath(int modId)
         {
             return IOUtilities.CombinePath(CacheClient.GenerateModDirectoryPath(modId),
                                            "stats.data");
         }
 
+        /// <summary>Stores a mod's statistics in the cache.</summary>
         public static bool SaveModStatistics(ModStatistics stats)
         {
             Debug.Assert(stats != null);
@@ -191,6 +191,7 @@ namespace ModIO
             return IOUtilities.WriteJsonObjectFile(statsFilePath, stats);
         }
 
+        /// <summary>Retrieves a mod's statistics from the cache.</summary>
         public static ModStatistics LoadModStatistics(int modId)
         {
             string statsFilePath = GenerateModStatisticsFilePath(modId);
@@ -318,7 +319,7 @@ namespace ModIO
         }
 
         /// <summary>Retrieves the file paths for the mod logos in the cache.</summary>
-        public static Dictionary<LogoSize, string> LoadModLogoFilePaths(int modId)
+        public static Dictionary<LogoSize, string> GetModLogoVersionFileNames(int modId)
         {
             return IOUtilities.ReadJsonObjectFile<Dictionary<LogoSize, string>>(CacheClient.GenerateModLogoVersionInfoFilePath(modId));
         }
@@ -334,7 +335,7 @@ namespace ModIO
             bool isSuccessful = IOUtilities.WritePNGFile(logoFilePath, logoTexture);
 
             // - Update the versioning info -
-            var versionInfo = CacheClient.LoadModLogoFilePaths(modId);
+            var versionInfo = CacheClient.GetModLogoVersionFileNames(modId);
             if(versionInfo == null)
             {
                 versionInfo = new Dictionary<LogoSize, string>();
@@ -359,15 +360,29 @@ namespace ModIO
         {
             Debug.Assert(!String.IsNullOrEmpty(fileName));
 
+            string logoFileName = GetModLogoFileName(modId, size);
+            if(logoFileName == fileName)
+            {
+                return CacheClient.LoadModLogo(modId, size);
+            }
+            else
+            {
+                return null;
+            }
+        }
+
+        /// <summary>Retrieves the information for the cached mod logos.</summary>
+        public static string GetModLogoFileName(int modId, LogoSize size)
+        {
             // - Ensure the logo is the correct version -
-            var versionInfo = CacheClient.LoadModLogoFilePaths(modId);
+            var versionInfo = CacheClient.GetModLogoVersionFileNames(modId);
             if(versionInfo != null)
             {
-                string logoVersionFileName = string.Empty;
-                if(versionInfo.TryGetValue(size, out logoVersionFileName)
-                   && logoVersionFileName.ToUpper().Equals(fileName.ToUpper()))
+                string logoFileName = string.Empty;
+                if(versionInfo.TryGetValue(size, out logoFileName)
+                   && !String.IsNullOrEmpty(logoFileName))
                 {
-                    return CacheClient.LoadModLogo(modId, size);
+                    return logoFileName;
                 }
             }
             return null;
@@ -567,6 +582,14 @@ namespace ModIO
         public static bool DeleteUserAvatar(int userId)
         {
             return IOUtilities.DeleteDirectory(CacheClient.GenerateUserAvatarDirectoryPath(userId));
+        }
+
+        // ---------[ OBSOLETE ]---------
+        /// <summary>[Obsolete] Retrieves the file paths for the mod logos in the cache.</summary>
+        [Obsolete("Use CacheClient.GetModLogoVersionFileNames() instead")]
+        public static Dictionary<LogoSize, string> LoadModLogoFilePaths(int modId)
+        {
+            return CacheClient.GetModLogoVersionFileNames(modId);
         }
     }
 }

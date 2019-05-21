@@ -6,6 +6,8 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.Networking;
 
+using ModIO.Compatibility;
+
 namespace ModIO
 {
     public static class DownloadClient
@@ -220,8 +222,13 @@ namespace ModIO
                 APIClient.GetModfile(modId, modfileId,
                                      (mf) =>
                                      {
-                                        modfileDownloadMap[idPair].fileSize = mf.fileSize;
-                                        DownloadModBinary_Internal(idPair, mf.downloadLocator.binaryURL);
+                                        // NOTE(@jackson): May have been cancelled
+                                        FileDownloadInfo downloadInfo = GetActiveModBinaryDownload(modId, modfileId);
+                                        if(downloadInfo != null)
+                                        {
+                                            modfileDownloadMap[idPair].fileSize = mf.fileSize;
+                                            DownloadModBinary_Internal(idPair, mf.downloadLocator.binaryURL);
+                                        }
                                      },
                                      (e) => { if(modfileDownloadFailed != null) { modfileDownloadFailed(idPair, e); } });
             }
@@ -268,6 +275,13 @@ namespace ModIO
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(tempFilePath));
                 downloadInfo.request.downloadHandler = new DownloadHandlerFile(tempFilePath);
+
+                #if PLATFORM_PS4
+                // NOTE(@jackson): This workaround addresses an issue in UnityWebRequests on the
+                //  PS4 whereby redirects fail in specific cases. Special thanks to @Eamon of
+                //  Spiderling Studios (http://spiderlinggames.co.uk/)
+                downloadInfo.request.redirectLimit = 0;
+                #endif
             }
             catch(Exception e)
             {
@@ -283,6 +297,8 @@ namespace ModIO
 
                 return;
             }
+
+            var operation = downloadInfo.request.SendWebRequest();
 
             #if DEBUG
             if(DownloadClient.logAllRequests)
@@ -300,14 +316,66 @@ namespace ModIO
                     }
                 }
 
-                Debug.Log("GENERATING DOWNLOAD REQUEST"
+                int timeStamp = ServerTimeStamp.Now;
+                Debug.Log("DOWNLOAD REQUEST SENT"
+                          + "\nTimeStamp: [" + timeStamp.ToString() + "] "
+                          + ServerTimeStamp.ToLocalDateTime(timeStamp).ToString()
                           + "\nURL: " + downloadInfo.request.url
                           + "\nHeaders: " + requestHeaders);
             }
             #endif
 
-            var operation = downloadInfo.request.SendWebRequest();
+
             operation.completed += (o) => DownloadClient.OnModBinaryRequestCompleted(idPair);
+        }
+
+
+        public static void CancelModBinaryDownload(int modId, int modfileId)
+        {
+            ModfileIdPair idPair = new ModfileIdPair()
+            {
+                modId = modId,
+                modfileId = modfileId,
+            };
+
+            CancelModfileDownload_Internal(idPair);
+        }
+
+        public static void CancelAnyModBinaryDownloads(int modId)
+        {
+            List<ModfileIdPair> downloadsToCancel = new List<ModfileIdPair>();
+
+            foreach(var kvp in modfileDownloadMap)
+            {
+                if(kvp.Key.modId == modId)
+                {
+                    downloadsToCancel.Add(kvp.Key);
+                }
+            }
+
+            foreach(var idPair in downloadsToCancel)
+            {
+                CancelModfileDownload_Internal(idPair);
+            }
+        }
+
+        private static void CancelModfileDownload_Internal(ModfileIdPair idPair)
+        {
+            FileDownloadInfo downloadInfo = null;
+            if(modfileDownloadMap.TryGetValue(idPair, out downloadInfo))
+            {
+                if(downloadInfo.request != null)
+                {
+                    downloadInfo.request.Abort();
+                }
+                else
+                {
+                    downloadInfo.isDone = true;
+                    downloadInfo.wasAborted = true;
+
+                    modfileDownloadMap.Remove(idPair);
+                }
+            }
         }
 
         private static void OnModBinaryRequestCompleted(ModfileIdPair idPair)
@@ -319,16 +387,57 @@ namespace ModIO
 
             if(request.IsError())
             {
-                downloadInfo.error = WebRequestError.GenerateFromWebRequest(request);
-
-                if(DownloadClient.logAllRequests)
+                if(request.error.ToUpper() == "USER ABORTED"
+                   || request.error.ToUpper() == "REQUEST ABORTED")
                 {
-                    WebRequestError.LogAsWarning(downloadInfo.error);
+                    #if DEBUG
+                    if(DownloadClient.logAllRequests)
+                    {
+                        Debug.Log("DOWNLOAD ABORTED"
+                                  + "\nDownload aborted at: " + ServerTimeStamp.Now
+                                  + "\nURL: " + request.url);
+                    }
+                    #endif
+
+                    downloadInfo.wasAborted = true;
                 }
 
-                if(modfileDownloadFailed != null)
+                // NOTE(@jackson): This workaround addresses an issue in UnityWebRequests on the
+                //  PS4 whereby redirects fail in specific cases. Special thanks to @Eamon of
+                //  Spiderling Studios (http://spiderlinggames.co.uk/)
+                #if PLATFORM_PS4
+                else if (downloadInfo.error.responseCode == 302) // Redirect limit exceeded
                 {
-                    modfileDownloadFailed(idPair, downloadInfo.error);
+                    string headerLocation = string.Empty;
+                    if (downloadInfo.error.responseHeaders.TryGetValue("location", out headerLocation)
+                        && !request.url.Equals(headerLocation))
+                    {
+                        if (DownloadClient.logAllRequests)
+                        {
+                            Debug.LogFormat("CAUGHT DOWNLOAD REDIRECTION\nURL: {0}", headerLocation);
+                        }
+
+                        downloadInfo.error = null;
+                        downloadInfo.isDone = false;
+                        DownloadModBinary_Internal(idPair, headerLocation);
+                        return;
+                    }
+                }
+                #endif
+
+                else
+                {
+                    downloadInfo.error = WebRequestError.GenerateFromWebRequest(request);
+
+                    if(DownloadClient.logAllRequests)
+                    {
+                        WebRequestError.LogAsWarning(downloadInfo.error);
+                    }
+
+                    if(modfileDownloadFailed != null)
+                    {
+                        modfileDownloadFailed(idPair, downloadInfo.error);
+                    }
                 }
             }
             else

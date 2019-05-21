@@ -3,8 +3,21 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Networking;
 
-namespace ModIO
+namespace ModIO.Compatibility
 {
+    public static class UnityWebRequestAsyncOperationExtensions
+    {
+        // NOTE(@jackson): Presumably !2018_OR_NEWER
+        public static UnityWebRequestAsyncOperation SendWebRequest(this UnityWebRequest request)
+        {
+            UnityEngine.AsyncOperation operation = request.Send();
+
+            UnityWebRequestAsyncOperation operationWrapper = new UnityWebRequestAsyncOperation(request, operation);
+            return operationWrapper;
+        }
+
+    }
+
     public class UnityWebRequestAsyncOperation
     {
         // ---------[ FIELDS ]---------

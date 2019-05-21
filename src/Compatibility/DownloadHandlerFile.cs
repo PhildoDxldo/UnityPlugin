@@ -15,7 +15,7 @@ using System.IO;
 using UnityEngine;
 using UnityEngine.Networking;
 
-namespace ModIO
+namespace ModIO.Compatibility
 {
     public class DownloadHandlerFile : DownloadHandlerScript
     {

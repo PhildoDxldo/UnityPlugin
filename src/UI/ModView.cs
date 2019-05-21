@@ -342,7 +342,7 @@ namespace ModIO.UI
             {
                 downloadDisplay.Initialize();
 
-                m_getDelegates.Add((ref ModDisplayDatad d) =>
+                m_getDelegates.Add((ref ModDisplayData d) =>
                 {
                     d.binaryDownload = downloadDisplay.data;
                 });
