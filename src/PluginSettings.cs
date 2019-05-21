@@ -147,8 +147,8 @@ namespace ModIO
             settings.m_data.apiURL = APIClient.API_URL_PRODUCTIONSERVER + APIClient.API_VERSION;
             settings.m_data.gameId = 0;
             settings.m_data.gameAPIKey = string.Empty;
-            settings.m_data.cacheDirectory = "$PERSISTENT_DATA_PATH$/modio-$GAME_ID$";
-            settings.m_data.installationDirectory = "$PERSISTENT_DATA_PATH$/modio-$GAME_ID$/_installedMods";
+            settings.m_data.cacheDirectory = IOUtilities.CombinePath("$PERSISTENT_DATA_PATH$", "modio-$GAME_ID$");
+            settings.m_data.installationDirectory = IOUtilities.CombinePath("$PERSISTENT_DATA_PATH$", "modio-$GAME_ID$", "_installedMods");
 
             UnityEditor.AssetDatabase.CreateAsset(settings, assetPath);
             UnityEditor.AssetDatabase.SaveAssets();
