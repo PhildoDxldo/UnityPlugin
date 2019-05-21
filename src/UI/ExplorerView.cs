@@ -39,13 +39,11 @@ namespace ModIO.UI
         [Tooltip("Object to display when there are no subscribed mods")]
         public GameObject noResultsDisplay;
 
-        [Header("Display Data")]
+        [Header("Runtime Data")]
         public GridLayoutGroup gridLayout = null;
         public RequestPage<ModProfile> currentPage = null;
         public RequestPage<ModProfile> targetPage = null;
         public List<string> filterTags = new List<string>();
-
-        [Header("Runtime Data")]
         public bool isTransitioning = false;
         public RectTransform currentPageContainer = null;
         public RectTransform targetPageContainer = null;
